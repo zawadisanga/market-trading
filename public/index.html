@@ -458,7 +458,66 @@
 </body>
 </html>
 
-
+<!-- Update your register modal to include confirm password -->
+<div id="registerModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2><i class="fas fa-user-plus"></i> Create Account</h2>
+            <span class="close">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="registerForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><i class="fas fa-user"></i> Full Name *</label>
+                        <input type="text" id="regFullName" required placeholder="John Doe">
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fas fa-at"></i> Username *</label>
+                        <input type="text" id="regUsername" required placeholder="johndoe">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-envelope"></i> Email Address *</label>
+                    <input type="email" id="regEmail" required placeholder="john@example.com">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><i class="fas fa-map-marker-alt"></i> Country</label>
+                        <select id="regCountry">
+                            <option value="Tanzania">🇹🇿 Tanzania</option>
+                            <option value="Kenya">🇰🇪 Kenya</option>
+                            <option value="Uganda">🇺🇬 Uganda</option>
+                            <option value="Nigeria">🇳🇬 Nigeria</option>
+                            <option value="South Africa">🇿🇦 South Africa</option>
+                            <option value="United States">🇺🇸 United States</option>
+                            <option value="United Kingdom">🇬🇧 United Kingdom</option>
+                            <option value="India">🇮🇳 India</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fas fa-phone"></i> Phone Number</label>
+                        <input type="tel" id="regPhone" placeholder="+255 123 456 789">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-lock"></i> Password *</label>
+                    <input type="password" id="regPassword" required placeholder="At least 6 characters">
+                    <small>Password must be at least 6 characters long</small>
+                </div>
+                <div class="form-group">
+                    <label><i class="fas fa-check-circle"></i> Confirm Password *</label>
+                    <input type="password" id="regConfirmPassword" required placeholder="Confirm your password">
+                </div>
+                <button type="submit" class="btn-submit-full">Create Account</button>
+            </form>
+            <div class="modal-footer">
+                <p>Already have an account? <a href="#" id="switchToLogin">Login</a></p>
+                <p><a href="#" id="forgotPasswordLink2">Forgot Password?</a></p>
+            </div>
+        </div>
+    </div>
+</div>
 
 
 <!-- Add this modal after the register modal in your index.html -->
