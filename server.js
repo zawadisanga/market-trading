@@ -633,3 +633,115 @@ server.listen(PORT, () => {
   console.log(`📍 Visit http://localhost:${PORT}`);
   console.log(`💱 ${Object.keys(currencies).length} currencies supported worldwide`);
 });
+
+
+
+// Add these to your existing server.js
+const crypto = require('crypto');
+
+// Add to your existing code - Password reset tokens
+// Add this to your database initialization
+function initDB() {
+  if (!fs.existsSync(DB_PATH)) {
+    const initialData = {
+      users: [],
+      products: [],
+      messages: [],
+      chats: [],
+      reviews: [],
+      orders: [],
+      passwordResets: [], // Add this for password reset tokens
+      analytics: { pageViews: 0, totalSales: 0, totalUsers: 0 },
+      settings: {
+        siteName: 'MarketHub Worldwide',
+        siteEmail: 'support@markethub.com',
+        maintenanceMode: false,
+        defaultCurrency: 'USD'
+      }
+    };
+    fs.writeFileSync(DB_PATH, JSON.stringify(initialData, null, 2));
+  }
+}
+
+// Forgot Password - Request reset
+app.post('/api/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const db = readDB();
+    const user = db.users.find(u => u.email === email);
+    
+    if (!user) {
+      // For security, don't reveal if email exists or not
+      return res.json({ 
+        success: true, 
+        message: 'If your email is registered, you will receive a password reset link' 
+      });
+    }
+    
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpiry = new Date();
+    resetExpiry.setHours(resetExpiry.getHours() + 1); // Token expires in 1 hour
+    
+    // Save reset token
+    db.passwordResets = db.passwordResets || [];
+    db.passwordResets.push({
+      email: user.email,
+      token: resetToken,
+      expiresAt: resetExpiry.toISOString(),
+      createdAt: new Date().toISOString()
+    });
+    
+    // Remove old tokens
+    db.passwordResets = db.passwordResets.filter(r => new Date(r.expiresAt) > new Date());
+    writeDB(db);
+    
+    // In production, send email here
+    // For demo, return token in response (in production, send via email)
+    res.json({
+      success: true,
+      message: 'Password reset link sent to your email',
+      resetToken: resetToken, // Remove this in production, only for demo
+      resetUrl: `${req.protocol}://${req.get('host')}/reset-password.html?token=${resetToken}`
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reset Password
+app.post('/api/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    const db = readDB();
+    
+    // Find valid reset token
+    const resetRequest = db.passwordResets?.find(r => 
+      r.token === token && new Date(r.expiresAt) > new Date()
+    );
+    
+    if (!resetRequest) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+    
+    // Find user
+    const userIndex = db.users.findIndex(u => u.email === resetRequest.email);
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    db.users[userIndex].password = hashedPassword;
+    
+    // Remove used reset tokens
+    db.passwordResets = db.passwordResets.filter(r => r.token !== token);
+    writeDB(db);
+    
+    res.json({ success: true, message: 'Password reset successful' });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
