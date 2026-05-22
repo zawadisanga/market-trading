@@ -1172,3 +1172,26 @@ window.startChat = startChat;
 window.openChat = openChat;
 window.deleteProduct = deleteProduct;
 window.sendMessage = sendMessage;
+
+
+
+/* Add to your style.css */
+#regConfirmPassword:focus {
+    outline: none;
+}
+
+input[type="password"] {
+    transition: all 0.3s ease;
+}
+
+#passwordMatchError, #passwordMatchSuccess {
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
