@@ -695,43 +695,281 @@ async function login(e) {
 }
 
 // Register
+// Replace your existing register function with this improved version
 async function register(e) {
     e.preventDefault();
     
-    if (document.getElementById('regPassword').value !== document.getElementById('regConfirmPassword')?.value) {
-        showToast('Passwords do not match', 'error');
+    const password = document.getElementById('regPassword').value;
+    const confirmPassword = document.getElementById('regConfirmPassword')?.value;
+    
+    // Password validation
+    if (password !== confirmPassword) {
+        showToast('Passwords do not match! Please check and try again.', 'error');
         return;
     }
     
-    const userData = {
-        fullName: document.getElementById('regFullName').value,
-        username: document.getElementById('regUsername').value,
-        email: document.getElementById('regEmail').value,
-        password: document.getElementById('regPassword').value,
-        country: document.getElementById('regCountry').value,
-        phone: document.getElementById('regPhone').value
-    };
+    if (password.length < 6) {
+        showToast('Password must be at least 6 characters long', 'error');
+        return;
+    }
     
-    const response = await fetch(`${API_URL}/api/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData)
-    });
+    // Show loading
+    const submitBtn = document.querySelector('#registerForm button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating account...';
+    submitBtn.disabled = true;
     
-    const data = await response.json();
-    if (data.token) {
-        localStorage.setItem('token', data.token);
-        currentUser = data.user;
-        showUserMenu();
-        document.getElementById('registerModal').style.display = 'none';
-        connectSocket();
-        loadProducts();
-        showToast('Account created successfully!', 'success');
-    } else {
-        showToast(data.error || 'Registration failed', 'error');
+    try {
+        const userData = {
+            fullName: document.getElementById('regFullName').value.trim(),
+            username: document.getElementById('regUsername').value.trim(),
+            email: document.getElementById('regEmail').value.trim(),
+            password: password,
+            country: document.getElementById('regCountry')?.value || 'Tanzania',
+            phone: document.getElementById('regPhone')?.value || ''
+        };
+        
+        // Basic validation
+        if (!userData.fullName || !userData.username || !userData.email) {
+            showToast('Please fill in all required fields', 'error');
+            return;
+        }
+        
+        if (!userData.email.includes('@')) {
+            showToast('Please enter a valid email address', 'error');
+            return;
+        }
+        
+        const response = await fetch(`${API_URL}/api/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(userData)
+        });
+        
+        const data = await response.json();
+        
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            currentUser = data.user;
+            showUserMenu();
+            document.getElementById('registerModal').style.display = 'none';
+            connectSocket();
+            loadProducts();
+            showToast(`Welcome to MarketHub, ${data.user.fullName}! 🎉`, 'success');
+            
+            // Reset form
+            document.getElementById('registerForm').reset();
+        } else {
+            showToast(data.error || 'Registration failed. Please try again.', 'error');
+        }
+    } catch (error) {
+        console.error('Registration error:', error);
+        showToast('Network error. Please check your connection.', 'error');
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
     }
 }
 
+// Add password confirmation checker to register form
+document.getElementById('regConfirmPassword')?.addEventListener('input', function() {
+    const password = document.getElementById('regPassword').value;
+    const confirm = this.value;
+    const errorSpan = document.getElementById('regPasswordError');
+    
+    if (password !== confirm) {
+        this.style.borderColor = 'var(--danger)';
+        if (!errorSpan) {
+            const span = document.createElement('small');
+            span.id = 'regPasswordError';
+            span.style.color = 'var(--danger)';
+            span.style.display = 'block';
+            span.style.marginTop = '0.25rem';
+            span.textContent = '❌ Passwords do not match';
+            this.parentNode.appendChild(span);
+        } else {
+            errorSpan.textContent = '❌ Passwords do not match';
+            errorSpan.style.display = 'block';
+        }
+    } else {
+        this.style.borderColor = 'var(--secondary)';
+        if (errorSpan) {
+            errorSpan.style.display = 'none';
+        }
+    }
+});
+
+// Forgot Password Function
+async function forgotPassword(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('resetEmail').value;
+    
+    if (!email) {
+        showToast('Please enter your email address', 'error');
+        return;
+    }
+    
+    const submitBtn = document.querySelector('#forgotPasswordForm button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+    submitBtn.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/forgot-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            document.getElementById('forgotPasswordModal').style.display = 'none';
+            
+            // If we got a reset token (demo mode), open reset modal
+            if (data.resetToken) {
+                document.getElementById('resetToken').value = data.resetToken;
+                document.getElementById('resetPasswordModal').style.display = 'block';
+                showToast('Demo mode: Reset token generated. Please set new password.', 'info');
+            }
+        } else {
+            showToast(data.error || 'Failed to send reset link', 'error');
+        }
+    } catch (error) {
+        showToast('Network error. Please try again.', 'error');
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+}
+
+// Reset Password Function
+async function resetPassword(e) {
+    e.preventDefault();
+    
+    const token = document.getElementById('resetToken').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmNewPassword').value;
+    
+    // Validation
+    if (newPassword !== confirmPassword) {
+        showToast('Passwords do not match!', 'error');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        showToast('Password must be at least 6 characters', 'error');
+        return;
+    }
+    
+    const submitBtn = document.querySelector('#resetPasswordForm button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Resetting...';
+    submitBtn.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, newPassword })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('Password reset successful! Please login with your new password.', 'success');
+            document.getElementById('resetPasswordModal').style.display = 'none';
+            showLoginModal();
+            
+            // Reset form
+            document.getElementById('resetPasswordForm').reset();
+        } else {
+            showToast(data.error || 'Failed to reset password', 'error');
+        }
+    } catch (error) {
+        showToast('Network error. Please try again.', 'error');
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+}
+
+// Add these event listeners after your existing setupEventListeners function
+function setupEventListeners() {
+    // ... your existing event listeners ...
+    
+    // Add forgot password event listeners
+    document.getElementById('forgotPasswordLink')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('loginModal').style.display = 'none';
+        document.getElementById('forgotPasswordModal').style.display = 'block';
+    });
+    
+    document.getElementById('backToLogin')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('forgotPasswordModal').style.display = 'none';
+        showLoginModal();
+    });
+    
+    document.getElementById('forgotPasswordForm')?.addEventListener('submit', forgotPassword);
+    document.getElementById('resetPasswordForm')?.addEventListener('submit', resetPassword);
+    
+    // Add real-time password match checking on register form
+    const regPassword = document.getElementById('regPassword');
+    const regConfirmPassword = document.getElementById('regConfirmPassword');
+    
+    if (regConfirmPassword) {
+        regConfirmPassword.addEventListener('input', function() {
+            if (regPassword.value !== this.value) {
+                this.setCustomValidity('Passwords do not match');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+    }
+    
+    // Add password strength indicator
+    if (regPassword) {
+        regPassword.addEventListener('input', function() {
+            const password = this.value;
+            let strength = 0;
+            
+            if (password.length >= 6) strength++;
+            if (password.match(/[a-z]/)) strength++;
+            if (password.match(/[A-Z]/)) strength++;
+            if (password.match(/[0-9]/)) strength++;
+            if (password.match(/[^a-zA-Z0-9]/)) strength++;
+            
+            const strengthText = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
+            const strengthColor = ['#EF4444', '#F59E0B', '#F59E0B', '#10B981', '#10B981'];
+            
+            let indicator = document.getElementById('passwordStrength');
+            if (!indicator) {
+                indicator = document.createElement('small');
+                indicator.id = 'passwordStrength';
+                indicator.style.display = 'block';
+                indicator.style.marginTop = '0.25rem';
+                this.parentNode.appendChild(indicator);
+            }
+            
+            if (password.length > 0) {
+                indicator.textContent = `Password strength: ${strengthText[strength]}`;
+                indicator.style.color = strengthColor[strength];
+            } else {
+                indicator.textContent = '';
+            }
+        });
+    }
+}
+
+// Update the register modal HTML to include confirm password field
+// Make sure your register modal has this field:
+// <div class="form-group">
+//     <label><i class="fas fa-check-circle"></i> Confirm Password</label>
+//     <input type="password" id="regConfirmPassword" placeholder="Confirm your password" required>
+// </div>
 // Logout
 function logout() {
     localStorage.removeItem('token');
