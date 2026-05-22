@@ -1,366 +1,402 @@
+// public/js/main.js - Tumeanza upya na kuhakikisha kila kitu kinafanya kazi
+
+// Wait for DOM to be fully loaded
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('MarketHub App Started');
+    
+    // Initialize all features
+    initializeApp();
+});
+
+function initializeApp() {
+    // Check authentication
+    checkAuth();
+    
+    // Load currencies
+    loadCurrencies();
+    
+    // Load stats
+    loadStats();
+    
+    // Setup all event listeners
+    setupAllEventListeners();
+    
+    // Load products
+    loadProducts();
+    
+    // Load locations
+    loadLocations();
+}
+
 // Global variables
 let currentUser = null;
 let currentSocket = null;
 let currentChatId = null;
 let currentCurrency = 'USD';
 let availableCurrencies = [];
-let currentRegion = 'all';
 let currentCategory = 'all';
 let currentSearchTerm = '';
 let currentSort = 'newest';
-let currentMinPrice = '';
-let currentMaxPrice = '';
-let currentLocation = '';
 
 // API URL
 const API_URL = window.location.origin;
 
-// Initialize app
-document.addEventListener('DOMContentLoaded', () => {
-    checkAuth();
-    loadCurrencies();
-    loadStats();
-    setupEventListeners();
-    loadProducts();
-    loadLocations();
-});
+// ============= AUTHENTICATION FUNCTIONS =============
 
-// Load statistics
-async function loadStats() {
-    try {
-        const response = await fetch(`${API_URL}/api/stats`);
-        const stats = await response.json();
-        document.getElementById('statProducts').textContent = `${stats.totalProducts}+`;
-        document.getElementById('statUsers').textContent = `${stats.totalUsers}+`;
-    } catch (error) {
-        console.error('Error loading stats:', error);
-    }
-}
-
-// Load locations
-async function loadLocations() {
-    try {
-        const response = await fetch(`${API_URL}/api/products`);
-        const products = await response.json();
-        const locations = [...new Set(products.map(p => p.location).filter(l => l))];
-        const locationSelect = document.getElementById('locationFilter');
-        locations.forEach(location => {
-            const option = document.createElement('option');
-            option.value = location;
-            option.textContent = location;
-            locationSelect.appendChild(option);
-        });
-    } catch (error) {
-        console.error('Error loading locations:', error);
-    }
-}
-
-// Load currencies
-async function loadCurrencies() {
-    try {
-        const response = await fetch(`${API_URL}/api/currencies`);
-        const data = await response.json();
-        availableCurrencies = data.currencies;
-        
-        const savedCurrency = localStorage.getItem('preferredCurrency');
-        if (savedCurrency && availableCurrencies.find(c => c.code === savedCurrency)) {
-            currentCurrency = savedCurrency;
-        }
-        
-        updateCurrencyDisplay();
-        populateCurrencyList();
-        loadProducts();
-    } catch (error) {
-        console.error('Error loading currencies:', error);
-    }
-}
-
-// Update currency display
-function updateCurrencyDisplay() {
-    const currency = availableCurrencies.find(c => c.code === currentCurrency);
-    if (currency) {
-        document.getElementById('currentCurrencySymbol').textContent = currency.symbol;
-        document.getElementById('currentCurrencyCode').textContent = currency.code;
-    }
-}
-
-// Populate currency list
-function populateCurrencyList() {
-    const currencyList = document.getElementById('currencyList');
-    if (!currencyList) return;
-    
-    let filteredCurrencies = availableCurrencies;
-    if (currentRegion !== 'all') {
-        filteredCurrencies = availableCurrencies.filter(c => c.region === currentRegion);
-    }
-    
-    currencyList.innerHTML = filteredCurrencies.map(currency => `
-        <div class="currency-option ${currency.code === currentCurrency ? 'active' : ''}" 
-             data-currency="${currency.code}">
-            <div class="currency-symbol">${currency.flag || '💰'} ${currency.symbol}</div>
-            <div class="currency-name">${currency.name}</div>
-            <div class="currency-code">${currency.code}</div>
-            ${currency.code === currentCurrency ? '<i class="fas fa-check"></i>' : ''}
-        </div>
-    `).join('');
-    
-    document.querySelectorAll('.currency-option').forEach(option => {
-        option.addEventListener('click', () => {
-            const newCurrency = option.dataset.currency;
-            changeCurrency(newCurrency);
-        });
-    });
-}
-
-// Change currency
-function changeCurrency(newCurrency) {
-    currentCurrency = newCurrency;
-    localStorage.setItem('preferredCurrency', newCurrency);
-    updateCurrencyDisplay();
-    populateCurrencyList();
-    loadProducts(currentCategory, currentSearchTerm);
-    showToast(`Currency changed to ${newCurrency}`, 'success');
-}
-
-// Setup currency tabs
-function setupCurrencyTabs() {
-    document.querySelectorAll('.currency-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.currency-tab').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            currentRegion = tab.dataset.region;
-            populateCurrencyList();
-        });
-    });
-}
-
-// Check authentication
 async function checkAuth() {
     const token = localStorage.getItem('token');
+    console.log('Checking auth, token exists:', !!token);
+    
     if (token) {
         try {
             const response = await fetch(`${API_URL}/api/me`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const user = await response.json();
+            
             if (!user.error) {
                 currentUser = user;
+                console.log('User logged in:', currentUser.fullName);
                 showUserMenu();
                 connectSocket();
                 loadUserChats();
             } else {
+                console.log('Invalid token, logging out');
                 logout();
             }
         } catch (error) {
+            console.error('Auth check error:', error);
             logout();
         }
     }
 }
 
-// Connect socket
-function connectSocket() {
-    const token = localStorage.getItem('token');
-    currentSocket = io(API_URL, { auth: { token } });
-    
-    currentSocket.on('connect', () => console.log('Socket connected'));
-    currentSocket.on('new_message', (message) => {
-        if (currentChatId === message.chatId) displayMessage(message);
-        loadUserChats();
-    });
-    currentSocket.on('message_notification', (data) => {
-        showNotification(`New message about ${data.productTitle}`);
-        loadUserChats();
-    });
-    currentSocket.on('user_typing', (data) => showTypingIndicator(data.isTyping));
-}
-
-// Show user menu
 function showUserMenu() {
-    document.getElementById('authLinks').style.display = 'none';
-    document.getElementById('userMenu').style.display = 'flex';
-    document.getElementById('userName').textContent = currentUser.fullName.split(' ')[0];
-    document.getElementById('userAvatar').src = currentUser.avatar;
-    document.getElementById('userRole').textContent = currentUser.role === 'admin' ? 'Admin' : 'Seller';
-}
-
-// Setup event listeners
-function setupEventListeners() {
-    document.getElementById('homeLink').addEventListener('click', (e) => {
-        e.preventDefault();
-        showView('products');
-        loadProducts();
-    });
+    const authLinks = document.getElementById('authLinks');
+    const userMenu = document.getElementById('userMenu');
     
-    document.getElementById('sellLink').addEventListener('click', (e) => {
-        e.preventDefault();
-        if (!currentUser) {
-            showToast('Please login to sell products', 'error');
-            showLoginModal();
-            return;
-        }
-        showView('sell');
-    });
-    
-    document.getElementById('messagesLink').addEventListener('click', (e) => {
-        e.preventDefault();
-        if (!currentUser) {
-            showLoginModal();
-            return;
-        }
-        showView('messages');
-        loadUserChats();
-    });
-    
-    document.getElementById('myProductsLink').addEventListener('click', (e) => {
-        e.preventDefault();
-        if (!currentUser) {
-            showLoginModal();
-            return;
-        }
-        showView('myProducts');
-        loadMyProducts();
-    });
-    
-    document.getElementById('loginBtn').addEventListener('click', showLoginModal);
-    document.getElementById('registerBtn').addEventListener('click', showRegisterModal);
-    document.getElementById('logoutBtn').addEventListener('click', logout);
-    document.getElementById('searchBtn').addEventListener('click', searchProducts);
-    document.getElementById('searchInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') searchProducts();
-    });
-    document.getElementById('heroSellBtn').addEventListener('click', () => {
-        if (currentUser) showView('sell');
-        else showLoginModal();
-    });
-    document.getElementById('heroBrowseBtn').addEventListener('click', () => {
-        showView('products');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-    
-    document.getElementById('sellForm').addEventListener('submit', submitProduct);
-    document.getElementById('loginForm').addEventListener('submit', login);
-    document.getElementById('registerForm').addEventListener('submit', register);
-    document.getElementById('sendMessageBtn').addEventListener('click', sendMessage);
-    document.getElementById('messageInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    });
-    document.getElementById('messageInput').addEventListener('input', handleTyping);
-    document.getElementById('cancelSellBtn').addEventListener('click', () => showView('products'));
-    document.getElementById('applyFilterBtn').addEventListener('click', applyFilters);
-    document.getElementById('sortSelect').addEventListener('change', applyFilters);
-    document.getElementById('locationFilter').addEventListener('change', applyFilters);
-    
-    document.querySelectorAll('.close').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.modal').forEach(modal => modal.style.display = 'none');
-        });
-    });
-    
-    setupFileUpload();
-    setupCurrencyTabs();
-}
-
-// Setup file upload
-function setupFileUpload() {
-    const fileUploadArea = document.getElementById('fileUploadArea');
-    const fileInput = document.querySelector('input[name="images"]');
-    const selectFilesBtn = document.querySelector('.btn-select-files');
-    
-    if (fileUploadArea) {
-        fileUploadArea.addEventListener('click', () => fileInput.click());
-        fileUploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            fileUploadArea.style.borderColor = 'var(--primary)';
-        });
-        fileUploadArea.addEventListener('dragleave', () => {
-            fileUploadArea.style.borderColor = '#E5E7EB';
-        });
-        fileUploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            const files = Array.from(e.dataTransfer.files);
-            handleFiles(files);
-        });
-        if (selectFilesBtn) {
-            selectFilesBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                fileInput.click();
-            });
-        }
-        fileInput.addEventListener('change', (e) => handleFiles(Array.from(e.target.files)));
+    if (authLinks && userMenu) {
+        authLinks.style.display = 'none';
+        userMenu.style.display = 'flex';
+        
+        const userName = document.getElementById('userName');
+        const userAvatar = document.getElementById('userAvatar');
+        
+        if (userName) userName.textContent = currentUser.fullName?.split(' ')[0] || 'User';
+        if (userAvatar) userAvatar.src = currentUser.avatar || 'https://ui-avatars.com/api/?name=User';
     }
 }
 
-// Handle files
-function handleFiles(files) {
-    const previewContainer = document.getElementById('imagePreview');
-    const fileInput = document.querySelector('input[name="images"]');
-    const dataTransfer = new DataTransfer();
-    const validFiles = files.slice(0, 10);
-    const existingFiles = Array.from(fileInput.files);
-    const allFiles = [...existingFiles, ...validFiles].slice(0, 10);
+function logout() {
+    localStorage.removeItem('token');
+    currentUser = null;
     
-    allFiles.forEach(file => dataTransfer.items.add(file));
-    fileInput.files = dataTransfer.files;
+    if (currentSocket) {
+        currentSocket.disconnect();
+    }
     
-    previewContainer.innerHTML = '';
-    Array.from(fileInput.files).forEach((file, index) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const previewDiv = document.createElement('div');
-            previewDiv.style.position = 'relative';
-            previewDiv.style.display = 'inline-block';
-            previewDiv.innerHTML = `
-                <img src="${e.target.result}" class="preview-image">
-                <button type="button" class="remove-image" data-index="${index}" 
-                    style="position: absolute; top: -8px; right: -8px; background: var(--danger); 
-                    color: white; border: none; border-radius: 50%; width: 24px; height: 24px; 
-                    cursor: pointer;">×</button>
-            `;
-            previewContainer.appendChild(previewDiv);
-        };
-        reader.readAsDataURL(file);
-    });
+    const authLinks = document.getElementById('authLinks');
+    const userMenu = document.getElementById('userMenu');
     
-    document.querySelectorAll('.remove-image').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const index = parseInt(btn.dataset.index);
-            const newFiles = Array.from(fileInput.files);
-            newFiles.splice(index, 1);
-            const newDataTransfer = new DataTransfer();
-            newFiles.forEach(file => newDataTransfer.items.add(file));
-            fileInput.files = newDataTransfer.files;
-            handleFiles([]);
+    if (authLinks) authLinks.style.display = 'flex';
+    if (userMenu) userMenu.style.display = 'none';
+    
+    showView('products');
+    loadProducts();
+    showToast('Logged out successfully', 'success');
+}
+
+// ============= UI FUNCTIONS =============
+
+function showView(view) {
+    console.log('Showing view:', view);
+    
+    const productsView = document.getElementById('productsView');
+    const sellView = document.getElementById('sellView');
+    const messagesView = document.getElementById('messagesView');
+    const myProductsView = document.getElementById('myProductsView');
+    
+    // Hide all views
+    if (productsView) productsView.style.display = 'none';
+    if (sellView) sellView.style.display = 'none';
+    if (messagesView) messagesView.style.display = 'none';
+    if (myProductsView) myProductsView.style.display = 'none';
+    
+    // Show selected view
+    if (view === 'products' && productsView) productsView.style.display = 'block';
+    else if (view === 'sell' && sellView) sellView.style.display = 'block';
+    else if (view === 'messages' && messagesView) messagesView.style.display = 'grid';
+    else if (view === 'myProducts' && myProductsView) myProductsView.style.display = 'block';
+}
+
+function showLoginModal() {
+    const modal = document.getElementById('loginModal');
+    if (modal) modal.style.display = 'block';
+}
+
+function showRegisterModal() {
+    const modal = document.getElementById('registerModal');
+    if (modal) modal.style.display = 'block';
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toastMessage');
+    
+    if (!toast || !toastMessage) return;
+    
+    toastMessage.textContent = message;
+    toast.style.display = 'block';
+    toast.style.background = type === 'error' ? '#EF4444' : '#10B981';
+    
+    setTimeout(() => {
+        toast.style.display = 'none';
+    }, 3000);
+}
+
+// ============= EVENT LISTENERS =============
+
+function setupAllEventListeners() {
+    console.log('Setting up event listeners...');
+    
+    // Navigation
+    const homeLink = document.getElementById('homeLink');
+    const sellLink = document.getElementById('sellLink');
+    const messagesLink = document.getElementById('messagesLink');
+    const myProductsLink = document.getElementById('myProductsLink');
+    
+    if (homeLink) {
+        homeLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            showView('products');
+            loadProducts();
+        });
+    }
+    
+    if (sellLink) {
+        sellLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!currentUser) {
+                showToast('Please login to sell products', 'error');
+                showLoginModal();
+                return;
+            }
+            showView('sell');
+        });
+    }
+    
+    if (messagesLink) {
+        messagesLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!currentUser) {
+                showLoginModal();
+                return;
+            }
+            showView('messages');
+            loadUserChats();
+        });
+    }
+    
+    if (myProductsLink) {
+        myProductsLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!currentUser) {
+                showLoginModal();
+                return;
+            }
+            showView('myProducts');
+            loadMyProducts();
+        });
+    }
+    
+    // Auth buttons
+    const loginBtn = document.getElementById('loginBtn');
+    const registerBtn = document.getElementById('registerBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    
+    if (loginBtn) {
+        loginBtn.addEventListener('click', () => {
+            console.log('Login button clicked');
+            showLoginModal();
+        });
+    }
+    
+    if (registerBtn) {
+        registerBtn.addEventListener('click', () => {
+            console.log('Register button clicked');
+            showRegisterModal();
+        });
+    }
+    
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            console.log('Logout button clicked');
+            logout();
+        });
+    }
+    
+    // Hero buttons
+    const heroSellBtn = document.getElementById('heroSellBtn');
+    const heroBrowseBtn = document.getElementById('heroBrowseBtn');
+    
+    if (heroSellBtn) {
+        heroSellBtn.addEventListener('click', () => {
+            if (currentUser) {
+                showView('sell');
+            } else {
+                showToast('Please login to sell products', 'error');
+                showLoginModal();
+            }
+        });
+    }
+    
+    if (heroBrowseBtn) {
+        heroBrowseBtn.addEventListener('click', () => {
+            showView('products');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    }
+    
+    // Search
+    const searchBtn = document.getElementById('searchBtn');
+    const searchInput = document.getElementById('searchInput');
+    
+    if (searchBtn) {
+        searchBtn.addEventListener('click', searchProducts);
+    }
+    
+    if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchProducts();
+        });
+    }
+    
+    // Forms
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const sellForm = document.getElementById('sellForm');
+    
+    if (loginForm) {
+        loginForm.addEventListener('submit', login);
+    }
+    
+    if (registerForm) {
+        registerForm.addEventListener('submit', register);
+    }
+    
+    if (sellForm) {
+        sellForm.addEventListener('submit', submitProduct);
+    }
+    
+    // Cancel buttons
+    const cancelSellBtn = document.getElementById('cancelSellBtn');
+    if (cancelSellBtn) {
+        cancelSellBtn.addEventListener('click', () => showView('products'));
+    }
+    
+    // Modal close buttons
+    document.querySelectorAll('.close').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.style.display = 'none';
+            });
         });
     });
+    
+    // Click outside modal to close
+    window.addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal')) {
+            e.target.style.display = 'none';
+        }
+    });
+    
+    // Category buttons
+    document.querySelectorAll('.category-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const category = btn.dataset.category;
+            document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentCategory = category;
+            loadProducts(category);
+            showView('products');
+        });
+    });
+    
+    // Forgot password links
+    const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+    const switchToRegister = document.getElementById('switchToRegister');
+    const switchToLogin = document.getElementById('switchToLogin');
+    const backToLogin = document.getElementById('backToLogin');
+    
+    if (forgotPasswordLink) {
+        forgotPasswordLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('forgotPasswordModal').style.display = 'block';
+        });
+    }
+    
+    if (switchToRegister) {
+        switchToRegister.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('loginModal').style.display = 'none';
+            showRegisterModal();
+        });
+    }
+    
+    if (switchToLogin) {
+        switchToLogin.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('registerModal').style.display = 'none';
+            showLoginModal();
+        });
+    }
+    
+    if (backToLogin) {
+        backToLogin.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('forgotPasswordModal').style.display = 'none';
+            showLoginModal();
+        });
+    }
+    
+    // Forgot password form
+    const forgotPasswordForm = document.getElementById('forgotPasswordForm');
+    if (forgotPasswordForm) {
+        forgotPasswordForm.addEventListener('submit', forgotPassword);
+    }
+    
+    // Reset password form
+    const resetPasswordForm = document.getElementById('resetPasswordForm');
+    if (resetPasswordForm) {
+        resetPasswordForm.addEventListener('submit', resetPassword);
+    }
+    
+    // Password confirmation on register
+    const regPassword = document.getElementById('regPassword');
+    const regConfirmPassword = document.getElementById('regConfirmPassword');
+    
+    if (regConfirmPassword) {
+        regConfirmPassword.addEventListener('input', function() {
+            if (regPassword.value !== this.value) {
+                this.setCustomValidity('Passwords do not match');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+    }
+    
+    console.log('All event listeners setup complete');
 }
 
-// Show view
-function showView(view) {
-    document.getElementById('productsView').style.display = 'none';
-    document.getElementById('sellView').style.display = 'none';
-    document.getElementById('messagesView').style.display = 'none';
-    document.getElementById('myProductsView').style.display = 'none';
-    
-    if (view === 'products') document.getElementById('productsView').style.display = 'block';
-    else if (view === 'sell') document.getElementById('sellView').style.display = 'block';
-    else if (view === 'messages') document.getElementById('messagesView').style.display = 'grid';
-    else if (view === 'myProducts') document.getElementById('myProductsView').style.display = 'block';
-}
+// ============= PRODUCT FUNCTIONS =============
 
-// Load products
-async function loadProducts(category = currentCategory, search = currentSearchTerm) {
-    currentCategory = category;
-    currentSearchTerm = search;
+async function loadProducts(category = 'all', search = '') {
+    console.log('Loading products...');
     
-    let url = `${API_URL}/api/products?currency=${currentCurrency}&sort=${currentSort}`;
+    let url = `${API_URL}/api/products?currency=${currentCurrency}`;
     if (category && category !== 'all') url += `&category=${category}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
-    if (currentMinPrice) url += `&minPrice=${currentMinPrice}`;
-    if (currentMaxPrice) url += `&maxPrice=${currentMaxPrice}`;
-    if (currentLocation) url += `&location=${encodeURIComponent(currentLocation)}`;
     
     try {
         const response = await fetch(url);
@@ -368,219 +404,235 @@ async function loadProducts(category = currentCategory, search = currentSearchTe
         displayProducts(products);
     } catch (error) {
         console.error('Error loading products:', error);
+        showToast('Error loading products', 'error');
     }
 }
 
-// Display products
 function displayProducts(products) {
     const container = document.getElementById('productsGrid');
+    if (!container) return;
+    
     if (!products.length) {
-        container.innerHTML = '<p style="text-align: center;">No products found</p>';
+        container.innerHTML = '<p style="text-align: center; padding: 2rem;">No products found</p>';
         return;
     }
     
-    container.innerHTML = products.map(product => {
-        const priceFormatted = formatPrice(product.price, product.displayCurrency);
-        return `
-            <div class="product-card" onclick="showProductDetail('${product.id}')">
-                ${product.condition === 'new' ? '<div class="product-badge">New</div>' : ''}
-                <img src="${product.images[0] || '/uploads/default.jpg'}" class="product-image">
-                <div class="product-info">
-                    <div class="product-title">${escapeHtml(product.title)}</div>
-                    <div class="product-price">${priceFormatted}</div>
-                    <div class="product-seller">
-                        <img src="${product.seller.avatar}" class="seller-avatar">
-                        <span class="seller-name">${escapeHtml(product.seller.fullName)}</span>
-                    </div>
+    container.innerHTML = products.map(product => `
+        <div class="product-card" onclick="showProductDetail('${product.id}')">
+            ${product.condition === 'new' ? '<div class="product-badge">New</div>' : ''}
+            <img src="${product.images[0] || 'https://via.placeholder.com/300'}" class="product-image" onerror="this.src='https://via.placeholder.com/300'">
+            <div class="product-info">
+                <div class="product-title">${escapeHtml(product.title)}</div>
+                <div class="product-price">${formatPrice(product.price, product.displayCurrency)}</div>
+                <div class="product-seller">
+                    <img src="${product.seller?.avatar || 'https://ui-avatars.com/api/?name=User'}" class="seller-avatar">
+                    <span class="seller-name">${escapeHtml(product.seller?.fullName || 'Unknown')}</span>
                 </div>
             </div>
-        `;
-    }).join('');
+        </div>
+    `).join('');
 }
 
-// Format price
 function formatPrice(price, currencyCode) {
-    const currency = availableCurrencies.find(c => c.code === currencyCode);
-    const symbol = currency ? currency.symbol : currencyCode;
-    
-    if (currencyCode === 'TZS' || currencyCode === 'UGX' || currencyCode === 'IDR' || currencyCode === 'VND') {
-        return `${symbol} ${Math.round(price).toLocaleString()}`;
-    } else if (currencyCode === 'JPY' || currencyCode === 'KRW') {
-        return `${symbol} ${Math.round(price).toLocaleString()}`;
-    } else {
-        return `${symbol} ${price.toFixed(2).toLocaleString()}`;
-    }
+    const symbol = getCurrencySymbol(currencyCode);
+    return `${symbol} ${price.toLocaleString()}`;
 }
 
-// Show product detail
-window.showProductDetail = async function(productId) {
-    try {
-        const response = await fetch(`${API_URL}/api/products/${productId}?currency=${currentCurrency}`);
-        const product = await response.json();
-        
-        const modal = document.getElementById('productModal');
-        const detailDiv = document.getElementById('productDetail');
-        const priceFormatted = formatPrice(product.price, product.displayCurrency);
-        
-        detailDiv.innerHTML = `
-            <h2>${escapeHtml(product.title)}</h2>
-            <div style="display: grid; gap: 1rem;">
-                ${product.images[0] ? `<img src="${product.images[0]}" style="max-width: 100%; border-radius: 8px;">` : ''}
-                <div style="background: var(--light); padding: 1rem; border-radius: 12px;">
-                    <div style="font-size: 2rem; font-weight: 700; color: var(--primary);">${priceFormatted}</div>
-                    ${product.originalCurrency !== product.displayCurrency ? 
-                        `<small>Original: ${formatPrice(product.originalPrice, product.originalCurrency)}</small>` : ''}
-                </div>
-                <div><strong>Category:</strong> ${product.category}</div>
-                <div><strong>Condition:</strong> ${product.condition}</div>
-                ${product.location ? `<div><strong>Location:</strong> ${product.location}</div>` : ''}
-                ${product.brand ? `<div><strong>Brand:</strong> ${product.brand}</div>` : ''}
-                <div><strong>Description:</strong></div>
-                <div>${escapeHtml(product.description)}</div>
-                <div><strong>Seller:</strong> ${escapeHtml(product.seller.fullName)}</div>
-                ${currentUser && currentUser.id !== product.seller.id ? 
-                    `<button onclick="startChat('${product.id}')" class="btn-primary" style="margin-top: 1rem; width: 100%;">
-                        <i class="fas fa-comment"></i> Contact Seller
-                    </button>` : ''}
-            </div>
-        `;
-        modal.style.display = 'block';
-    } catch (error) {
-        console.error('Error:', error);
-    }
-};
+function getCurrencySymbol(currencyCode) {
+    const symbols = {
+        'USD': '$', 'EUR': '€', 'GBP': '£', 'TZS': 'TSh', 
+        'KES': 'KSh', 'UGX': 'USh', 'NGN': '₦', 'GHS': '₵',
+        'ZAR': 'R', 'INR': '₹', 'CNY': '¥', 'JPY': '¥'
+    };
+    return symbols[currencyCode] || currencyCode;
+}
 
-// Start chat
-window.startChat = async function(productId) {
-    if (!currentUser) {
-        showLoginModal();
+// ============= AUTH FUNCTIONS =============
+
+async function login(e) {
+    e.preventDefault();
+    console.log('Login attempt...');
+    
+    const email = document.getElementById('loginEmail')?.value;
+    const password = document.getElementById('loginPassword')?.value;
+    
+    if (!email || !password) {
+        showToast('Please fill in all fields', 'error');
         return;
     }
     
-    const response = await fetch(`${API_URL}/api/chats`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ productId, buyerId: currentUser.id })
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
+    submitBtn.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await response.json();
+        console.log('Login response:', data);
+        
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            currentUser = data.user;
+            showUserMenu();
+            document.getElementById('loginModal').style.display = 'none';
+            connectSocket();
+            loadUserChats();
+            loadProducts();
+            showToast(`Welcome back, ${data.user.fullName}!`, 'success');
+        } else {
+            showToast(data.error || 'Login failed', 'error');
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        showToast('Network error. Please try again.', 'error');
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+}
+
+async function register(e) {
+    e.preventDefault();
+    console.log('Register attempt...');
+    
+    const fullName = document.getElementById('regFullName')?.value;
+    const username = document.getElementById('regUsername')?.value;
+    const email = document.getElementById('regEmail')?.value;
+    const password = document.getElementById('regPassword')?.value;
+    const confirmPassword = document.getElementById('regConfirmPassword')?.value;
+    
+    if (!fullName || !username || !email || !password) {
+        showToast('Please fill in all required fields', 'error');
+        return;
+    }
+    
+    if (password !== confirmPassword) {
+        showToast('Passwords do not match!', 'error');
+        return;
+    }
+    
+    if (password.length < 6) {
+        showToast('Password must be at least 6 characters', 'error');
+        return;
+    }
+    
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating account...';
+    submitBtn.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fullName, username, email, password })
+        });
+        
+        const data = await response.json();
+        console.log('Register response:', data);
+        
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            currentUser = data.user;
+            showUserMenu();
+            document.getElementById('registerModal').style.display = 'none';
+            connectSocket();
+            loadProducts();
+            showToast(`Welcome to MarketHub, ${data.user.fullName}!`, 'success');
+        } else {
+            showToast(data.error || 'Registration failed', 'error');
+        }
+    } catch (error) {
+        console.error('Register error:', error);
+        showToast('Network error. Please try again.', 'error');
+    } finally {
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+}
+
+// ============= CHAT FUNCTIONS =============
+
+function connectSocket() {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    
+    currentSocket = io(API_URL, { auth: { token } });
+    
+    currentSocket.on('connect', () => {
+        console.log('Socket connected');
     });
     
-    const chat = await response.json();
-    document.getElementById('productModal').style.display = 'none';
-    showView('messages');
-    loadUserChats();
-    setTimeout(() => openChat(chat.id), 500);
-};
+    currentSocket.on('new_message', (message) => {
+        if (currentChatId === message.chatId) {
+            displayMessage(message);
+        }
+        loadUserChats();
+    });
+    
+    currentSocket.on('message_notification', (data) => {
+        showToast(`New message about ${data.productTitle}`, 'info');
+        loadUserChats();
+    });
+}
 
-// Load user chats
 async function loadUserChats() {
     if (!currentUser) return;
     
-    const response = await fetch(`${API_URL}/api/chats`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    const chats = await response.json();
-    
-    const chatsList = document.getElementById('chatsList');
-    if (!chats.length) {
-        chatsList.innerHTML = '<p style="text-align: center;">No conversations yet</p>';
-        return;
+    try {
+        const response = await fetch(`${API_URL}/api/chats`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const chats = await response.json();
+        
+        const chatsList = document.getElementById('chatsList');
+        if (!chatsList) return;
+        
+        if (!chats.length) {
+            chatsList.innerHTML = '<p style="text-align: center; padding: 1rem;">No conversations yet</p>';
+            return;
+        }
+        
+        chatsList.innerHTML = chats.map(chat => `
+            <div class="chat-item" onclick="openChat('${chat.id}')">
+                <img src="${chat.otherUser?.avatar || 'https://ui-avatars.com/api/?name=User'}" class="chat-avatar">
+                <div class="chat-info">
+                    <div class="chat-name">${escapeHtml(chat.otherUser?.fullName || 'User')}</div>
+                    <div class="chat-last-message">${chat.lastMessage ? escapeHtml(chat.lastMessage.message.substring(0, 50)) : 'No messages'}</div>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading chats:', error);
     }
-    
-    chatsList.innerHTML = chats.map(chat => `
-        <div class="chat-item" onclick="openChat('${chat.id}')">
-            <img src="${chat.otherUser.avatar}" class="chat-avatar">
-            <div class="chat-info">
-                <div class="chat-name">${escapeHtml(chat.otherUser.fullName)}</div>
-                <div class="chat-last-message">${chat.lastMessage ? escapeHtml(chat.lastMessage.message.substring(0, 50)) : 'No messages'}</div>
-            </div>
-            ${chat.unreadCount > 0 ? `<span class="unread-badge">${chat.unreadCount}</span>` : ''}
-        </div>
-    `).join('');
 }
 
-// Open chat
-window.openChat = async function(chatId) {
-    currentChatId = chatId;
-    
-    const response = await fetch(`${API_URL}/api/chats/${chatId}/messages`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    const messages = await response.json();
-    
-    const chats = await fetch(`${API_URL}/api/chats`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    const allChats = await chats.json();
-    const chat = allChats.find(c => c.id === chatId);
-    
-    document.getElementById('chatHeader').innerHTML = `
-        <div style="display: flex; align-items: center; gap: 1rem;">
-            <img src="${chat.otherUser.avatar}" style="width: 50px; height: 50px; border-radius: 50%;">
-            <div>
-                <h3>${escapeHtml(chat.otherUser.fullName)}</h3>
-                <p style="font-size: 0.9rem; color: var(--gray);">About: ${escapeHtml(chat.productTitle)}</p>
-            </div>
-        </div>
-    `;
-    
-    const messagesContainer = document.getElementById('chatMessages');
-    messagesContainer.innerHTML = messages.map(msg => `
-        <div class="message ${msg.senderId === currentUser.id ? 'message-sent' : 'message-received'}">
-            <div>${escapeHtml(msg.message)}</div>
-            <div class="message-time">${new Date(msg.timestamp).toLocaleString()}</div>
-        </div>
-    `).join('');
-    
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    document.getElementById('chatInput').style.display = 'flex';
-    
-    if (currentSocket) currentSocket.emit('join_chat', chatId);
-};
+// ============= PRODUCT SUBMISSION =============
 
-// Send message
-async function sendMessage() {
-    const messageInput = document.getElementById('messageInput');
-    const message = messageInput.value.trim();
-    if (!message || !currentChatId) return;
-    
-    currentSocket.emit('send_message', { chatId: currentChatId, message });
-    messageInput.value = '';
-}
-
-// Display message
-function displayMessage(message) {
-    const messagesContainer = document.getElementById('chatMessages');
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${message.senderId === currentUser.id ? 'message-sent' : 'message-received'}`;
-    messageDiv.innerHTML = `
-        <div>${escapeHtml(message.message)}</div>
-        <div class="message-time">${new Date(message.timestamp).toLocaleString()}</div>
-    `;
-    messagesContainer.appendChild(messageDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
-// Submit product
 async function submitProduct(e) {
     e.preventDefault();
     
     if (!currentUser) {
-        showToast('Please login to sell', 'error');
+        showToast('Please login to sell products', 'error');
         showLoginModal();
         return;
     }
     
     const formData = new FormData(e.target);
-    const images = document.querySelector('input[name="images"]').files;
+    const images = document.querySelector('input[name="images"]')?.files;
     
-    if (images.length === 0) {
+    if (!images || images.length === 0) {
         showToast('Please upload at least one image', 'error');
         return;
     }
     
-    const submitBtn = document.querySelector('.btn-submit');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
     const originalText = submitBtn.innerHTML;
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Listing...';
     submitBtn.disabled = true;
@@ -595,7 +647,8 @@ async function submitProduct(e) {
         if (response.ok) {
             showToast('Product listed successfully!', 'success');
             e.target.reset();
-            document.getElementById('imagePreview').innerHTML = '';
+            const imagePreview = document.getElementById('imagePreview');
+            if (imagePreview) imagePreview.innerHTML = '';
             showView('products');
             loadProducts();
         } else {
@@ -603,6 +656,7 @@ async function submitProduct(e) {
             showToast(error.error || 'Error listing product', 'error');
         }
     } catch (error) {
+        console.error('Submit product error:', error);
         showToast('Network error', 'error');
     } finally {
         submitBtn.innerHTML = originalText;
@@ -610,207 +664,18 @@ async function submitProduct(e) {
     }
 }
 
-// Load my products
-async function loadMyProducts() {
-    const response = await fetch(`${API_URL}/api/my-products`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-    const products = await response.json();
-    
-    const container = document.getElementById('myProductsGrid');
-    if (!products.length) {
-        container.innerHTML = '<p>You haven\'t listed any products yet.</p>';
-        return;
-    }
-    
-    container.innerHTML = products.map(product => `
-        <div class="product-card">
-            <img src="${product.images[0]}" class="product-image">
-            <div class="product-info">
-                <div class="product-title">${escapeHtml(product.title)}</div>
-                <div class="product-price">${formatPrice(product.price, product.currency)}</div>
-                <button onclick="deleteProduct('${product.id}')" class="btn-secondary" style="background: var(--danger); margin-top: 0.5rem;">
-                    Delete
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
+// ============= FORGOT PASSWORD FUNCTIONS =============
 
-// Delete product
-window.deleteProduct = async function(productId) {
-    if (confirm('Are you sure you want to delete this product?')) {
-        const response = await fetch(`${API_URL}/api/products/${productId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        if (response.ok) {
-            showToast('Product deleted', 'success');
-            loadMyProducts();
-        }
-    }
-};
-
-// Apply filters
-function applyFilters() {
-    currentSort = document.getElementById('sortSelect').value;
-    currentLocation = document.getElementById('locationFilter').value;
-    currentMinPrice = document.getElementById('minPrice').value;
-    currentMaxPrice = document.getElementById('maxPrice').value;
-    loadProducts();
-}
-
-// Search products
-function searchProducts() {
-    currentSearchTerm = document.getElementById('searchInput').value;
-    loadProducts(currentCategory, currentSearchTerm);
-    showView('products');
-}
-
-// Login
-async function login(e) {
-    e.preventDefault();
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    
-    const response = await fetch(`${API_URL}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-    });
-    
-    const data = await response.json();
-    if (data.token) {
-        localStorage.setItem('token', data.token);
-        currentUser = data.user;
-        showUserMenu();
-        document.getElementById('loginModal').style.display = 'none';
-        connectSocket();
-        loadUserChats();
-        loadProducts();
-        showToast(`Welcome back, ${data.user.fullName}!`, 'success');
-    } else {
-        showToast(data.error || 'Login failed', 'error');
-    }
-}
-
-// Register
-// Replace your existing register function with this improved version
-async function register(e) {
-    e.preventDefault();
-    
-    const password = document.getElementById('regPassword').value;
-    const confirmPassword = document.getElementById('regConfirmPassword')?.value;
-    
-    // Password validation
-    if (password !== confirmPassword) {
-        showToast('Passwords do not match! Please check and try again.', 'error');
-        return;
-    }
-    
-    if (password.length < 6) {
-        showToast('Password must be at least 6 characters long', 'error');
-        return;
-    }
-    
-    // Show loading
-    const submitBtn = document.querySelector('#registerForm button[type="submit"]');
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating account...';
-    submitBtn.disabled = true;
-    
-    try {
-        const userData = {
-            fullName: document.getElementById('regFullName').value.trim(),
-            username: document.getElementById('regUsername').value.trim(),
-            email: document.getElementById('regEmail').value.trim(),
-            password: password,
-            country: document.getElementById('regCountry')?.value || 'Tanzania',
-            phone: document.getElementById('regPhone')?.value || ''
-        };
-        
-        // Basic validation
-        if (!userData.fullName || !userData.username || !userData.email) {
-            showToast('Please fill in all required fields', 'error');
-            return;
-        }
-        
-        if (!userData.email.includes('@')) {
-            showToast('Please enter a valid email address', 'error');
-            return;
-        }
-        
-        const response = await fetch(`${API_URL}/api/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(userData)
-        });
-        
-        const data = await response.json();
-        
-        if (data.token) {
-            localStorage.setItem('token', data.token);
-            currentUser = data.user;
-            showUserMenu();
-            document.getElementById('registerModal').style.display = 'none';
-            connectSocket();
-            loadProducts();
-            showToast(`Welcome to MarketHub, ${data.user.fullName}! 🎉`, 'success');
-            
-            // Reset form
-            document.getElementById('registerForm').reset();
-        } else {
-            showToast(data.error || 'Registration failed. Please try again.', 'error');
-        }
-    } catch (error) {
-        console.error('Registration error:', error);
-        showToast('Network error. Please check your connection.', 'error');
-    } finally {
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
-    }
-}
-
-// Add password confirmation checker to register form
-document.getElementById('regConfirmPassword')?.addEventListener('input', function() {
-    const password = document.getElementById('regPassword').value;
-    const confirm = this.value;
-    const errorSpan = document.getElementById('regPasswordError');
-    
-    if (password !== confirm) {
-        this.style.borderColor = 'var(--danger)';
-        if (!errorSpan) {
-            const span = document.createElement('small');
-            span.id = 'regPasswordError';
-            span.style.color = 'var(--danger)';
-            span.style.display = 'block';
-            span.style.marginTop = '0.25rem';
-            span.textContent = '❌ Passwords do not match';
-            this.parentNode.appendChild(span);
-        } else {
-            errorSpan.textContent = '❌ Passwords do not match';
-            errorSpan.style.display = 'block';
-        }
-    } else {
-        this.style.borderColor = 'var(--secondary)';
-        if (errorSpan) {
-            errorSpan.style.display = 'none';
-        }
-    }
-});
-
-// Forgot Password Function
 async function forgotPassword(e) {
     e.preventDefault();
     
-    const email = document.getElementById('resetEmail').value;
-    
+    const email = document.getElementById('resetEmail')?.value;
     if (!email) {
-        showToast('Please enter your email address', 'error');
+        showToast('Please enter your email', 'error');
         return;
     }
     
-    const submitBtn = document.querySelector('#forgotPasswordForm button[type="submit"]');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
     const originalText = submitBtn.innerHTML;
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
     submitBtn.disabled = true;
@@ -828,32 +693,28 @@ async function forgotPassword(e) {
             showToast(data.message, 'success');
             document.getElementById('forgotPasswordModal').style.display = 'none';
             
-            // If we got a reset token (demo mode), open reset modal
             if (data.resetToken) {
                 document.getElementById('resetToken').value = data.resetToken;
                 document.getElementById('resetPasswordModal').style.display = 'block';
-                showToast('Demo mode: Reset token generated. Please set new password.', 'info');
             }
         } else {
             showToast(data.error || 'Failed to send reset link', 'error');
         }
     } catch (error) {
-        showToast('Network error. Please try again.', 'error');
+        showToast('Network error', 'error');
     } finally {
         submitBtn.innerHTML = originalText;
         submitBtn.disabled = false;
     }
 }
 
-// Reset Password Function
 async function resetPassword(e) {
     e.preventDefault();
     
-    const token = document.getElementById('resetToken').value;
-    const newPassword = document.getElementById('newPassword').value;
-    const confirmPassword = document.getElementById('confirmNewPassword').value;
+    const token = document.getElementById('resetToken')?.value;
+    const newPassword = document.getElementById('newPassword')?.value;
+    const confirmPassword = document.getElementById('confirmNewPassword')?.value;
     
-    // Validation
     if (newPassword !== confirmPassword) {
         showToast('Passwords do not match!', 'error');
         return;
@@ -864,7 +725,7 @@ async function resetPassword(e) {
         return;
     }
     
-    const submitBtn = document.querySelector('#resetPasswordForm button[type="submit"]');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
     const originalText = submitBtn.innerHTML;
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Resetting...';
     submitBtn.disabled = true;
@@ -879,188 +740,253 @@ async function resetPassword(e) {
         const data = await response.json();
         
         if (data.success) {
-            showToast('Password reset successful! Please login with your new password.', 'success');
+            showToast('Password reset successful! Please login.', 'success');
             document.getElementById('resetPasswordModal').style.display = 'none';
             showLoginModal();
-            
-            // Reset form
-            document.getElementById('resetPasswordForm').reset();
         } else {
             showToast(data.error || 'Failed to reset password', 'error');
         }
     } catch (error) {
-        showToast('Network error. Please try again.', 'error');
+        showToast('Network error', 'error');
     } finally {
         submitBtn.innerHTML = originalText;
         submitBtn.disabled = false;
     }
 }
 
-// Add these event listeners after your existing setupEventListeners function
-function setupEventListeners() {
-    // ... your existing event listeners ...
-    
-    // Add forgot password event listeners
-    document.getElementById('forgotPasswordLink')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        document.getElementById('loginModal').style.display = 'none';
-        document.getElementById('forgotPasswordModal').style.display = 'block';
-    });
-    
-    document.getElementById('backToLogin')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        document.getElementById('forgotPasswordModal').style.display = 'none';
-        showLoginModal();
-    });
-    
-    document.getElementById('forgotPasswordForm')?.addEventListener('submit', forgotPassword);
-    document.getElementById('resetPasswordForm')?.addEventListener('submit', resetPassword);
-    
-    // Add real-time password match checking on register form
-    const regPassword = document.getElementById('regPassword');
-    const regConfirmPassword = document.getElementById('regConfirmPassword');
-    
-    if (regConfirmPassword) {
-        regConfirmPassword.addEventListener('input', function() {
-            if (regPassword.value !== this.value) {
-                this.setCustomValidity('Passwords do not match');
-            } else {
-                this.setCustomValidity('');
-            }
-        });
-    }
-    
-    // Add password strength indicator
-    if (regPassword) {
-        regPassword.addEventListener('input', function() {
-            const password = this.value;
-            let strength = 0;
-            
-            if (password.length >= 6) strength++;
-            if (password.match(/[a-z]/)) strength++;
-            if (password.match(/[A-Z]/)) strength++;
-            if (password.match(/[0-9]/)) strength++;
-            if (password.match(/[^a-zA-Z0-9]/)) strength++;
-            
-            const strengthText = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong'];
-            const strengthColor = ['#EF4444', '#F59E0B', '#F59E0B', '#10B981', '#10B981'];
-            
-            let indicator = document.getElementById('passwordStrength');
-            if (!indicator) {
-                indicator = document.createElement('small');
-                indicator.id = 'passwordStrength';
-                indicator.style.display = 'block';
-                indicator.style.marginTop = '0.25rem';
-                this.parentNode.appendChild(indicator);
-            }
-            
-            if (password.length > 0) {
-                indicator.textContent = `Password strength: ${strengthText[strength]}`;
-                indicator.style.color = strengthColor[strength];
-            } else {
-                indicator.textContent = '';
-            }
-        });
-    }
-}
+// ============= HELPER FUNCTIONS =============
 
-// Update the register modal HTML to include confirm password field
-// Make sure your register modal has this field:
-// <div class="form-group">
-//     <label><i class="fas fa-check-circle"></i> Confirm Password</label>
-//     <input type="password" id="regConfirmPassword" placeholder="Confirm your password" required>
-// </div>
-// Logout
-function logout() {
-    localStorage.removeItem('token');
-    currentUser = null;
-    if (currentSocket) currentSocket.disconnect();
-    document.getElementById('authLinks').style.display = 'flex';
-    document.getElementById('userMenu').style.display = 'none';
+function searchProducts() {
+    const searchTerm = document.getElementById('searchInput')?.value || '';
+    loadProducts(currentCategory, searchTerm);
     showView('products');
-    loadProducts();
-    showToast('Logged out successfully', 'success');
 }
 
-// Show modals
-function showLoginModal() {
-    document.getElementById('loginModal').style.display = 'block';
-}
-
-function showRegisterModal() {
-    document.getElementById('registerModal').style.display = 'block';
-}
-
-// Show toast
-function showToast(message, type = 'success') {
-    const toast = document.getElementById('toast');
-    const toastMessage = document.getElementById('toastMessage');
-    toastMessage.textContent = message;
-    toast.style.display = 'block';
-    toast.style.background = type === 'error' ? 'var(--danger)' : 'var(--secondary)';
-    setTimeout(() => toast.style.display = 'none', 3000);
-}
-
-// Show notification
-function showNotification(message) {
-    if (Notification.permission === 'granted') {
-        new Notification('MarketHub', { body: message });
-    } else if (Notification.permission !== 'denied') {
-        Notification.requestPermission();
+async function loadMyProducts() {
+    if (!currentUser) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/my-products`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const products = await response.json();
+        
+        const container = document.getElementById('myProductsGrid');
+        if (!container) return;
+        
+        if (!products.length) {
+            container.innerHTML = '<p style="text-align: center; padding: 2rem;">You haven\'t listed any products yet.</p>';
+            return;
+        }
+        
+        container.innerHTML = products.map(product => `
+            <div class="product-card">
+                <img src="${product.images[0] || 'https://via.placeholder.com/300'}" class="product-image">
+                <div class="product-info">
+                    <div class="product-title">${escapeHtml(product.title)}</div>
+                    <div class="product-price">${formatPrice(product.price, product.currency)}</div>
+                    <button onclick="deleteProduct('${product.id}')" style="background: #EF4444; color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; margin-top: 0.5rem;">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading my products:', error);
     }
 }
 
-// Handle typing
-let typingTimeout;
-function handleTyping() {
-    if (typingTimeout) clearTimeout(typingTimeout);
-    currentSocket.emit('typing', { chatId: currentChatId, isTyping: true });
-    typingTimeout = setTimeout(() => {
-        currentSocket.emit('typing', { chatId: currentChatId, isTyping: false });
-    }, 1000);
+window.deleteProduct = async function(productId) {
+    if (confirm('Are you sure you want to delete this product?')) {
+        try {
+            const response = await fetch(`${API_URL}/api/products/${productId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            
+            if (response.ok) {
+                showToast('Product deleted', 'success');
+                loadMyProducts();
+                loadProducts();
+            }
+        } catch (error) {
+            showToast('Error deleting product', 'error');
+        }
+    }
+};
+
+window.showProductDetail = async function(productId) {
+    try {
+        const response = await fetch(`${API_URL}/api/products/${productId}?currency=${currentCurrency}`);
+        const product = await response.json();
+        
+        const modal = document.getElementById('productModal');
+        const detailDiv = document.getElementById('productDetail');
+        
+        if (!modal || !detailDiv) return;
+        
+        detailDiv.innerHTML = `
+            <h2>${escapeHtml(product.title)}</h2>
+            <img src="${product.images[0] || 'https://via.placeholder.com/300'}" style="max-width: 100%; border-radius: 8px; margin: 1rem 0;">
+            <div style="font-size: 1.5rem; font-weight: bold; color: var(--primary);">${formatPrice(product.price, product.displayCurrency)}</div>
+            <p><strong>Category:</strong> ${product.category}</p>
+            <p><strong>Condition:</strong> ${product.condition}</p>
+            <p><strong>Description:</strong> ${escapeHtml(product.description)}</p>
+            <p><strong>Seller:</strong> ${escapeHtml(product.seller?.fullName || 'Unknown')}</p>
+            ${currentUser && currentUser.id !== product.sellerId ? 
+                `<button onclick="startChat('${product.id}')" class="btn-primary" style="margin-top: 1rem; width: 100%; padding: 0.75rem;">
+                    <i class="fas fa-comment"></i> Contact Seller
+                </button>` : ''
+            }
+        `;
+        
+        modal.style.display = 'block';
+    } catch (error) {
+        console.error('Error showing product detail:', error);
+    }
+};
+
+window.startChat = async function(productId) {
+    if (!currentUser) {
+        showLoginModal();
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/chats`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({ productId, buyerId: currentUser.id })
+        });
+        
+        const chat = await response.json();
+        document.getElementById('productModal').style.display = 'none';
+        showView('messages');
+        loadUserChats();
+        setTimeout(() => openChat(chat.id), 500);
+    } catch (error) {
+        showToast('Error starting chat', 'error');
+    }
+};
+
+window.openChat = async function(chatId) {
+    currentChatId = chatId;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/chats/${chatId}/messages`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const messages = await response.json();
+        
+        const messagesContainer = document.getElementById('chatMessages');
+        if (!messagesContainer) return;
+        
+        messagesContainer.innerHTML = messages.map(msg => `
+            <div class="message ${msg.senderId === currentUser?.id ? 'message-sent' : 'message-received'}">
+                <div>${escapeHtml(msg.message)}</div>
+                <div class="message-time">${new Date(msg.timestamp).toLocaleString()}</div>
+            </div>
+        `).join('');
+        
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        
+        const chatInput = document.getElementById('chatInput');
+        if (chatInput) chatInput.style.display = 'flex';
+        
+        if (currentSocket) {
+            currentSocket.emit('join_chat', chatId);
+        }
+    } catch (error) {
+        console.error('Error opening chat:', error);
+    }
+};
+
+function sendMessage() {
+    const messageInput = document.getElementById('messageInput');
+    const message = messageInput?.value.trim();
+    
+    if (!message || !currentChatId || !currentSocket) return;
+    
+    currentSocket.emit('send_message', {
+        chatId: currentChatId,
+        message: message
+    });
+    
+    messageInput.value = '';
 }
 
-// Show typing indicator
-function showTypingIndicator(isTyping) {
-    const indicator = document.querySelector('.typing-indicator');
-    if (isTyping && !indicator) {
-        const div = document.createElement('div');
-        div.className = 'typing-indicator';
-        div.textContent = 'Someone is typing...';
-        document.getElementById('chatMessages').appendChild(div);
-    } else if (!isTyping && indicator) {
-        indicator.remove();
+function displayMessage(message) {
+    const messagesContainer = document.getElementById('chatMessages');
+    if (!messagesContainer) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${message.senderId === currentUser?.id ? 'message-sent' : 'message-received'}`;
+    messageDiv.innerHTML = `
+        <div>${escapeHtml(message.message)}</div>
+        <div class="message-time">${new Date(message.timestamp).toLocaleString()}</div>
+    `;
+    messagesContainer.appendChild(messageDiv);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// ============= CURRENCY FUNCTIONS =============
+
+async function loadCurrencies() {
+    try {
+        const response = await fetch(`${API_URL}/api/currencies`);
+        const data = await response.json();
+        availableCurrencies = data.currencies || [];
+        
+        const savedCurrency = localStorage.getItem('preferredCurrency');
+        if (savedCurrency) {
+            currentCurrency = savedCurrency;
+        }
+        
+        updateCurrencyDisplay();
+    } catch (error) {
+        console.error('Error loading currencies:', error);
     }
 }
 
-// Escape HTML
+function updateCurrencyDisplay() {
+    const currentCurrencySpan = document.getElementById('currentCurrencyCode');
+    if (currentCurrencySpan) {
+        currentCurrencySpan.textContent = currentCurrency;
+    }
+}
+
+async function loadStats() {
+    try {
+        const response = await fetch(`${API_URL}/api/stats`);
+        const stats = await response.json();
+        
+        const statProducts = document.getElementById('statProducts');
+        const statUsers = document.getElementById('statUsers');
+        
+        if (statProducts) statProducts.textContent = `${stats.totalProducts || 0}+`;
+        if (statUsers) statUsers.textContent = `${stats.totalUsers || 0}+`;
+    } catch (error) {
+        console.error('Error loading stats:', error);
+    }
+}
+
+async function loadLocations() {
+    // Optional: Load locations for filter
+}
+
 function escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-// Category click handlers
-document.querySelectorAll('.category-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const category = btn.dataset.category;
-        document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        currentCategory = category;
-        loadProducts(category, currentSearchTerm);
-        showView('products');
-    });
-});
-
-// Switch between login and register
-document.getElementById('switchToRegister')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    document.getElementById('loginModal').style.display = 'none';
-    showRegisterModal();
-});
-
-document.getElementById('switchToLogin')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    document.getElementById('registerModal').style.display = 'none';
-    showLoginModal();
-});
+// Make functions globally available
+window.showProductDetail = showProductDetail;
+window.startChat = startChat;
+window.openChat = openChat;
+window.deleteProduct = deleteProduct;
+window.sendMessage = sendMessage;
