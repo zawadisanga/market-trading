@@ -1,699 +1,337 @@
-// public/js/main.js - Version Fixed
-
-// Wait for DOM to be fully loaded
+// Wait for DOM to load
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('MarketHub App Started');
-    initializeApp();
-});
-
-function initializeApp() {
+    console.log('MarketHub Started');
+    
+    // Check if user is logged in
     checkAuth();
-    loadCurrencies();
-    loadStats();
-    setupAllEventListeners();
+    
+    // Load products
     loadProducts();
-    loadLocations();
-    setupPasswordMatchCheck(); // Add this
-}
+    
+    // Setup all event listeners
+    setupEventListeners();
+});
 
 // Global variables
 let currentUser = null;
 let currentSocket = null;
-let currentChatId = null;
-let currentCurrency = 'USD';
-let availableCurrencies = [];
-let currentCategory = 'all';
-let currentSearchTerm = '';
-let currentSort = 'newest';
+let API_URL = window.location.origin;
 
-// API URL
-const API_URL = window.location.origin;
-
-// ============= AUTHENTICATION FUNCTIONS =============
-
+// ============= CHECK AUTH =============
 async function checkAuth() {
     const token = localStorage.getItem('token');
-    console.log('Checking auth, token exists:', !!token);
-    
     if (token) {
         try {
             const response = await fetch(`${API_URL}/api/me`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const user = await response.json();
-            
             if (!user.error) {
                 currentUser = user;
-                console.log('User logged in:', currentUser.fullName);
                 showUserMenu();
                 connectSocket();
-                loadUserChats();
-            } else {
-                console.log('Invalid token, logging out');
-                logout();
             }
         } catch (error) {
-            console.error('Auth check error:', error);
-            logout();
+            console.log('Auth error:', error);
         }
     }
 }
 
 function showUserMenu() {
-    const authLinks = document.getElementById('authLinks');
-    const userMenu = document.getElementById('userMenu');
-    
-    if (authLinks && userMenu) {
-        authLinks.style.display = 'none';
-        userMenu.style.display = 'flex';
-        
-        const userName = document.getElementById('userName');
-        const userAvatar = document.getElementById('userAvatar');
-        
-        if (userName) userName.textContent = currentUser.fullName?.split(' ')[0] || 'User';
-        if (userAvatar) userAvatar.src = currentUser.avatar || 'https://ui-avatars.com/api/?name=User';
-    }
+    document.getElementById('authLinks').style.display = 'none';
+    document.getElementById('userMenu').style.display = 'flex';
+    document.getElementById('userName').textContent = currentUser.fullName;
 }
 
 function logout() {
     localStorage.removeItem('token');
     currentUser = null;
-    
-    if (currentSocket) {
-        currentSocket.disconnect();
-    }
-    
-    const authLinks = document.getElementById('authLinks');
-    const userMenu = document.getElementById('userMenu');
-    
-    if (authLinks) authLinks.style.display = 'flex';
-    if (userMenu) userMenu.style.display = 'none';
-    
-    showView('products');
-    loadProducts();
-    showToast('Logged out successfully', 'success');
+    location.reload();
 }
 
-// ============= UI FUNCTIONS =============
-
-function showView(view) {
-    console.log('Showing view:', view);
-    
-    const productsView = document.getElementById('productsView');
-    const sellView = document.getElementById('sellView');
-    const messagesView = document.getElementById('messagesView');
-    const myProductsView = document.getElementById('myProductsView');
-    
-    if (productsView) productsView.style.display = 'none';
-    if (sellView) sellView.style.display = 'none';
-    if (messagesView) messagesView.style.display = 'none';
-    if (myProductsView) myProductsView.style.display = 'none';
-    
-    if (view === 'products' && productsView) productsView.style.display = 'block';
-    else if (view === 'sell' && sellView) sellView.style.display = 'block';
-    else if (view === 'messages' && messagesView) messagesView.style.display = 'grid';
-    else if (view === 'myProducts' && myProductsView) myProductsView.style.display = 'block';
-}
-
-function showLoginModal() {
-    const modal = document.getElementById('loginModal');
-    if (modal) modal.style.display = 'block';
-}
-
-function showRegisterModal() {
-    const modal = document.getElementById('registerModal');
-    if (modal) modal.style.display = 'block';
-}
-
-function showToast(message, type = 'success') {
-    const toast = document.getElementById('toast');
-    const toastMessage = document.getElementById('toastMessage');
-    
-    if (!toast || !toastMessage) return;
-    
-    toastMessage.textContent = message;
-    toast.style.display = 'block';
-    toast.style.background = type === 'error' ? '#EF4444' : '#10B981';
-    
-    setTimeout(() => {
-        toast.style.display = 'none';
-    }, 3000);
-}
-
-// ============= PASSWORD MATCH CHECK =============
-
-function setupPasswordMatchCheck() {
-    console.log('Setting up password match check...');
-    
-    const passwordInput = document.getElementById('regPassword');
-    const confirmInput = document.getElementById('regConfirmPassword');
-    
-    if (!passwordInput) {
-        console.log('Password field not found - might not be on page yet');
-        return;
-    }
-    
-    if (!confirmInput) {
-        console.log('Confirm password field not found - please add id="regConfirmPassword" to your confirm password input');
-        return;
-    }
-    
-    console.log('Password match check setup complete');
-    
-    function checkPasswords() {
-        const password = passwordInput.value;
-        const confirm = confirmInput.value;
-        
-        if (confirm.length === 0) {
-            confirmInput.style.borderColor = '#E5E7EB';
-            confirmInput.style.backgroundColor = 'white';
-            return;
-        }
-        
-        if (password === confirm) {
-            confirmInput.style.borderColor = '#10B981';
-            confirmInput.style.backgroundColor = '#F0FDF4';
-        } else {
-            confirmInput.style.borderColor = '#EF4444';
-            confirmInput.style.backgroundColor = '#FEF2F2';
-        }
-    }
-    
-    passwordInput.addEventListener('input', checkPasswords);
-    confirmInput.addEventListener('input', checkPasswords);
-}
-
-// ============= EVENT LISTENERS =============
-
-function setupAllEventListeners() {
-    console.log('Setting up event listeners...');
-    
-    // Navigation
-    const homeLink = document.getElementById('homeLink');
-    const sellLink = document.getElementById('sellLink');
-    const messagesLink = document.getElementById('messagesLink');
-    const myProductsLink = document.getElementById('myProductsLink');
-    
-    if (homeLink) {
-        homeLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            showView('products');
-            loadProducts();
-        });
-    }
-    
-    if (sellLink) {
-        sellLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (!currentUser) {
-                showToast('Please login to sell products', 'error');
-                showLoginModal();
-                return;
-            }
-            showView('sell');
-        });
-    }
-    
-    if (messagesLink) {
-        messagesLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (!currentUser) {
-                showLoginModal();
-                return;
-            }
-            showView('messages');
-            loadUserChats();
-        });
-    }
-    
-    if (myProductsLink) {
-        myProductsLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (!currentUser) {
-                showLoginModal();
-                return;
-            }
-            showView('myProducts');
-            loadMyProducts();
-        });
-    }
-    
-    // Auth buttons
-    const loginBtn = document.getElementById('loginBtn');
-    const registerBtn = document.getElementById('registerBtn');
-    const logoutBtn = document.getElementById('logoutBtn');
-    
-    if (loginBtn) {
-        loginBtn.addEventListener('click', () => {
-            console.log('Login button clicked');
-            showLoginModal();
-        });
-    }
-    
-    if (registerBtn) {
-        registerBtn.addEventListener('click', () => {
-            console.log('Register button clicked');
-            showRegisterModal();
-        });
-    }
-    
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => {
-            console.log('Logout button clicked');
-            logout();
-        });
-    }
-    
-    // Hero buttons
-    const heroSellBtn = document.getElementById('heroSellBtn');
-    const heroBrowseBtn = document.getElementById('heroBrowseBtn');
-    
-    if (heroSellBtn) {
-        heroSellBtn.addEventListener('click', () => {
-            if (currentUser) {
-                showView('sell');
-            } else {
-                showToast('Please login to sell products', 'error');
-                showLoginModal();
-            }
-        });
-    }
-    
-    if (heroBrowseBtn) {
-        heroBrowseBtn.addEventListener('click', () => {
-            showView('products');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-    }
-    
-    // Search
-    const searchBtn = document.getElementById('searchBtn');
-    const searchInput = document.getElementById('searchInput');
-    
-    if (searchBtn) {
-        searchBtn.addEventListener('click', searchProducts);
-    }
-    
-    if (searchInput) {
-        searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') searchProducts();
-        });
-    }
-    
-    // Forms
-    const loginForm = document.getElementById('loginForm');
-    const registerForm = document.getElementById('registerForm');
-    const sellForm = document.getElementById('sellForm');
-    
-    if (loginForm) {
-        loginForm.addEventListener('submit', login);
-    }
-    
-    if (registerForm) {
-        registerForm.addEventListener('submit', register);
-    }
-    
-    if (sellForm) {
-        sellForm.addEventListener('submit', submitProduct);
-    }
-    
-    // Cancel buttons
-    const cancelSellBtn = document.getElementById('cancelSellBtn');
-    if (cancelSellBtn) {
-        cancelSellBtn.addEventListener('click', () => showView('products'));
-    }
-    
-    // Modal close buttons
-    document.querySelectorAll('.close').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.modal').forEach(modal => {
-                modal.style.display = 'none';
-            });
-        });
-    });
-    
-    // Click outside modal
-    window.addEventListener('click', (e) => {
-        if (e.target.classList.contains('modal')) {
-            e.target.style.display = 'none';
-        }
-    });
-    
-    // Category buttons
-    document.querySelectorAll('.category-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const category = btn.dataset.category;
-            document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentCategory = category;
-            loadProducts(category);
-            showView('products');
-        });
-    });
-    
-    // Forgot password links
-    const forgotPasswordLink = document.getElementById('forgotPasswordLink');
-    const switchToRegister = document.getElementById('switchToRegister');
-    const switchToLogin = document.getElementById('switchToLogin');
-    const backToLogin = document.getElementById('backToLogin');
-    
-    if (forgotPasswordLink) {
-        forgotPasswordLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            document.getElementById('loginModal').style.display = 'none';
-            document.getElementById('forgotPasswordModal').style.display = 'block';
-        });
-    }
-    
-    if (switchToRegister) {
-        switchToRegister.addEventListener('click', (e) => {
-            e.preventDefault();
-            document.getElementById('loginModal').style.display = 'none';
-            showRegisterModal();
-        });
-    }
-    
-    if (switchToLogin) {
-        switchToLogin.addEventListener('click', (e) => {
-            e.preventDefault();
-            document.getElementById('registerModal').style.display = 'none';
-            showLoginModal();
-        });
-    }
-    
-    if (backToLogin) {
-        backToLogin.addEventListener('click', (e) => {
-            e.preventDefault();
-            document.getElementById('forgotPasswordModal').style.display = 'none';
-            showLoginModal();
-        });
-    }
-    
-    // Forgot password form
-    const forgotPasswordForm = document.getElementById('forgotPasswordForm');
-    if (forgotPasswordForm) {
-        forgotPasswordForm.addEventListener('submit', forgotPassword);
-    }
-    
-    // Reset password form
-    const resetPasswordForm = document.getElementById('resetPasswordForm');
-    if (resetPasswordForm) {
-        resetPasswordForm.addEventListener('submit', resetPassword);
-    }
-    
-    console.log('All event listeners setup complete');
-}
-
-// ============= REGISTER FUNCTION (ONLY ONE) =============
-
-async function register(event) {
-    if (event) event.preventDefault();
-    
-    console.log('Register function called');
-    
-    // Get form values
-    const fullName = document.getElementById('regFullName')?.value.trim();
-    const username = document.getElementById('regUsername')?.value.trim();
-    const email = document.getElementById('regEmail')?.value.trim();
-    const password = document.getElementById('regPassword')?.value;
-    const confirmPassword = document.getElementById('regConfirmPassword')?.value;
-    
-    // Validation
-    if (!fullName || !username || !email || !password) {
-        showToast('Please fill in all required fields', 'error');
-        return;
-    }
-    
-    // Check password match
-    if (password !== confirmPassword) {
-        console.log('Passwords do not match');
-        showToast('Passwords do not match! Please check and try again.', 'error');
-        
-        const confirmInput = document.getElementById('regConfirmPassword');
-        if (confirmInput) {
-            confirmInput.style.borderColor = '#EF4444';
-            confirmInput.style.backgroundColor = '#FEF2F2';
-        }
-        return;
-    }
-    
-    // Check password length
-    if (password.length < 6) {
-        showToast('Password must be at least 6 characters long', 'error');
-        return;
-    }
-    
-    // Check email format
-    if (!email.includes('@') || !email.includes('.')) {
-        showToast('Please enter a valid email address', 'error');
-        return;
-    }
-    
-    // Get submit button - try both possible IDs
-    let submitBtn = document.getElementById('registerSubmitBtn');
-    if (!submitBtn) {
-        submitBtn = document.querySelector('#registerForm button[type="submit"]');
-    }
-    
-    if (!submitBtn) {
-        console.log('Submit button not found');
-        // Continue anyway
-    } else {
-        const originalText = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating account...';
-        submitBtn.disabled = true;
-        
-        try {
-            const userData = { fullName, username, email, password };
-            
-            console.log('Sending registration data...');
-            
-            const response = await fetch(`${API_URL}/api/register`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(userData)
-            });
-            
-            const data = await response.json();
-            console.log('Registration response:', data);
-            
-            if (data.token) {
-                localStorage.setItem('token', data.token);
-                currentUser = data.user;
-                showUserMenu();
-                
-                const registerModal = document.getElementById('registerModal');
-                if (registerModal) registerModal.style.display = 'none';
-                
-                document.getElementById('registerForm').reset();
-                connectSocket();
-                loadProducts();
-                showToast(`Welcome to MarketHub, ${data.user.fullName}! 🎉`, 'success');
-            } else {
-                showToast(data.error || 'Registration failed. Please try again.', 'error');
-            }
-        } catch (error) {
-            console.error('Registration error:', error);
-            showToast('Network error. Please check your connection.', 'error');
-        } finally {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-        }
-    }
-}
-
-// ============= LOGIN FUNCTION =============
-
-async function login(event) {
-    event.preventDefault();
-    console.log('Login attempt...');
-    
-    const email = document.getElementById('loginEmail')?.value;
-    const password = document.getElementById('loginPassword')?.value;
-    
-    if (!email || !password) {
-        showToast('Please fill in all fields', 'error');
-        return;
-    }
-    
-    const submitBtn = event.target.querySelector('button[type="submit"]');
-    if (!submitBtn) return;
-    
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
-    submitBtn.disabled = true;
-    
-    try {
-        const response = await fetch(`${API_URL}/api/login`, {
-            method: 'POST',
-            headers: { 'Content-Type':application/json' },
-            body: JSON.stringify({ email, password })
-        });
-        
-        const data = await response.json();
-        console.log('Login response:', data);
-        
-        if (data.token) {
-            localStorage.setItem('token', data.token);
-            currentUser = data.user;
-            showUserMenu();
-            
-            const loginModal = document.getElementById('loginModal');
-            if (loginModal) loginModal.style.display = 'none';
-            
-            connectSocket();
-            loadUserChats();
-            loadProducts();
-            showToast(`Welcome back, ${data.user.fullName}!`, 'success');
-        } else {
-            showToast(data.error || 'Login failed', 'error');
-        }
-    } catch (error) {
-        console.error('Login error:', error);
-        showToast('Network error. Please try again.', 'error');
-    } finally {
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
-    }
-}
-
-// ============= PRODUCT FUNCTIONS =============
-
-async function loadProducts(category = 'all', search = '') {
-    console.log('Loading products...');
-    
-    let url = `${API_URL}/api/products?currency=${currentCurrency}`;
-    if (category && category !== 'all') url += `&category=${category}`;
-    if (search) url += `&search=${encodeURIComponent(search)}`;
-    
-    try {
-        const response = await fetch(url);
-        const products = await response.json();
-        displayProducts(products);
-    } catch (error) {
-        console.error('Error loading products:', error);
-        showToast('Error loading products', 'error');
-    }
-}
-
-function displayProducts(products) {
-    const container = document.getElementById('productsGrid');
-    if (!container) return;
-    
-    if (!products.length) {
-        container.innerHTML = '<p style="text-align: center; padding: 2rem;">No products found</p>';
-        return;
-    }
-    
-    container.innerHTML = products.map(product => `
-        <div class="product-card" onclick="showProductDetail('${product.id}')">
-            ${product.condition === 'new' ? '<div class="product-badge">New</div>' : ''}
-            <img src="${product.images[0] || 'https://via.placeholder.com/300'}" class="product-image" onerror="this.src='https://via.placeholder.com/300'">
-            <div class="product-info">
-                <div class="product-title">${escapeHtml(product.title)}</div>
-                <div class="product-price">${formatPrice(product.price, product.displayCurrency)}</div>
-                <div class="product-seller">
-                    <img src="${product.seller?.avatar || 'https://ui-avatars.com/api/?name=User'}" class="seller-avatar">
-                    <span class="seller-name">${escapeHtml(product.seller?.fullName || 'Unknown')}</span>
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
-function formatPrice(price, currencyCode) {
-    const symbol = getCurrencySymbol(currencyCode);
-    return `${symbol} ${Number(price).toLocaleString()}`;
-}
-
-function getCurrencySymbol(currencyCode) {
-    const symbols = {
-        'USD': '$', 'EUR': '€', 'GBP': '£', 'TZS': 'TSh', 
-        'KES': 'KSh', 'UGX': 'USh', 'NGN': '₦', 'GHS': '₵',
-        'ZAR': 'R', 'INR': '₹', 'CNY': '¥', 'JPY': '¥'
-    };
-    return symbols[currencyCode] || currencyCode;
-}
-
-// ============= CHAT FUNCTIONS =============
-
+// ============= SOCKET CONNECTION =============
 function connectSocket() {
     const token = localStorage.getItem('token');
     if (!token) return;
     
     currentSocket = io(API_URL, { auth: { token } });
-    
-    currentSocket.on('connect', () => {
-        console.log('Socket connected');
-    });
-    
-    currentSocket.on('new_message', (message) => {
-        if (currentChatId === message.chatId) {
-            displayMessage(message);
-        }
-        loadUserChats();
-    });
-    
-    currentSocket.on('message_notification', (data) => {
-        showToast(`New message about ${data.productTitle}`, 'info');
-        loadUserChats();
-    });
+    currentSocket.on('connect', () => console.log('Socket connected'));
 }
 
-async function loadUserChats() {
-    if (!currentUser) return;
+// ============= EVENT LISTENERS =============
+function setupEventListeners() {
+    // Navigation
+    document.getElementById('homeLink').onclick = (e) => {
+        e.preventDefault();
+        showView('products');
+        loadProducts();
+    };
     
+    document.getElementById('sellLink').onclick = (e) => {
+        e.preventDefault();
+        if (!currentUser) {
+            showToast('Please login to sell', 'error');
+            showLoginModal();
+            return;
+        }
+        showView('sell');
+    };
+    
+    document.getElementById('messagesLink').onclick = (e) => {
+        e.preventDefault();
+        if (!currentUser) {
+            showLoginModal();
+            return;
+        }
+        showView('messages');
+        loadChats();
+    };
+    
+    document.getElementById('myProductsLink').onclick = (e) => {
+        e.preventDefault();
+        if (!currentUser) {
+            showLoginModal();
+            return;
+        }
+        showView('myProducts');
+        loadMyProducts();
+    };
+    
+    // Auth buttons
+    document.getElementById('loginBtn').onclick = () => showLoginModal();
+    document.getElementById('registerBtn').onclick = () => showRegisterModal();
+    document.getElementById('logoutBtn').onclick = () => logout();
+    
+    // Hero buttons
+    document.getElementById('heroSellBtn').onclick = () => {
+        if (currentUser) showView('sell');
+        else showLoginModal();
+    };
+    
+    document.getElementById('heroBrowseBtn').onclick = () => {
+        showView('products');
+        loadProducts();
+    };
+    
+    // Search
+    document.getElementById('searchBtn').onclick = searchProducts;
+    document.getElementById('searchInput').onkeypress = (e) => {
+        if (e.key === 'Enter') searchProducts();
+    };
+    
+    // Forms
+    document.getElementById('loginForm').onsubmit = login;
+    document.getElementById('registerForm').onsubmit = register;
+    document.getElementById('sellForm').onsubmit = submitProduct;
+    document.getElementById('forgotPasswordForm').onsubmit = forgotPassword;
+    document.getElementById('sendMessageBtn').onclick = sendMessage;
+    document.getElementById('messageInput').onkeypress = (e) => {
+        if (e.key === 'Enter') sendMessage();
+    };
+    
+    // Modal close buttons
+    document.querySelectorAll('.close').forEach(btn => {
+        btn.onclick = () => btn.closest('.modal').style.display = 'none';
+    });
+    
+    // Modal links
+    document.getElementById('switchToRegister').onclick = (e) => {
+        e.preventDefault();
+        document.getElementById('loginModal').style.display = 'none';
+        showRegisterModal();
+    };
+    
+    document.getElementById('switchToLogin').onclick = (e) => {
+        e.preventDefault();
+        document.getElementById('registerModal').style.display = 'none';
+        showLoginModal();
+    };
+    
+    document.getElementById('forgotPasswordLink').onclick = (e) => {
+        e.preventDefault();
+        document.getElementById('loginModal').style.display = 'none';
+        document.getElementById('forgotPasswordModal').style.display = 'block';
+    };
+    
+    document.getElementById('backToLogin').onclick = (e) => {
+        e.preventDefault();
+        document.getElementById('forgotPasswordModal').style.display = 'none';
+        showLoginModal();
+    };
+}
+
+// ============= VIEW FUNCTIONS =============
+function showView(view) {
+    document.getElementById('productsView').style.display = 'none';
+    document.getElementById('sellView').style.display = 'none';
+    document.getElementById('messagesView').style.display = 'none';
+    document.getElementById('myProductsView').style.display = 'none';
+    
+    if (view === 'products') document.getElementById('productsView').style.display = 'block';
+    else if (view === 'sell') document.getElementById('sellView').style.display = 'block';
+    else if (view === 'messages') document.getElementById('messagesView').style.display = 'block';
+    else if (view === 'myProducts') document.getElementById('myProductsView').style.display = 'block';
+}
+
+function showLoginModal() {
+    document.getElementById('loginModal').style.display = 'block';
+}
+
+function showRegisterModal() {
+    document.getElementById('registerModal').style.display = 'block';
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.style.background = type === 'error' ? '#EF4444' : '#10B981';
+    toast.style.display = 'block';
+    setTimeout(() => toast.style.display = 'none', 3000);
+}
+
+// ============= PRODUCT FUNCTIONS =============
+async function loadProducts() {
     try {
-        const response = await fetch(`${API_URL}/api/chats`, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        const chats = await response.json();
+        const response = await fetch(`${API_URL}/api/products`);
+        const products = await response.json();
         
-        const chatsList = document.getElementById('chatsList');
-        if (!chatsList) return;
-        
-        if (!chats.length) {
-            chatsList.innerHTML = '<p style="text-align: center; padding: 1rem;">No conversations yet</p>';
+        const grid = document.getElementById('productsGrid');
+        if (!products.length) {
+            grid.innerHTML = '<p>No products found</p>';
             return;
         }
         
-        chatsList.innerHTML = chats.map(chat => `
-            <div class="chat-item" onclick="openChat('${chat.id}')">
-                <img src="${chat.otherUser?.avatar || 'https://ui-avatars.com/api/?name=User'}" class="chat-avatar">
-                <div class="chat-info">
-                    <div class="chat-name">${escapeHtml(chat.otherUser?.fullName || 'User')}</div>
-                    <div class="chat-last-message">${chat.lastMessage ? escapeHtml(chat.lastMessage.message.substring(0, 50)) : 'No messages'}</div>
-                </div>
+        grid.innerHTML = products.map(product => `
+            <div class="product-card" onclick="showProductDetail('${product.id}')">
+                <img src="${product.images[0] || 'https://via.placeholder.com/300'}" class="product-image">
+                <h3>${escapeHtml(product.title)}</h3>
+                <p>$${product.price}</p>
+                <small>By ${escapeHtml(product.seller?.fullName || 'Unknown')}</small>
             </div>
         `).join('');
     } catch (error) {
-        console.error('Error loading chats:', error);
+        console.error('Error:', error);
+    }
+}
+
+window.showProductDetail = async function(productId) {
+    try {
+        const response = await fetch(`${API_URL}/api/products/${productId}`);
+        const product = await response.json();
+        
+        alert(`${product.title}\nPrice: $${product.price}\nDescription: ${product.description}`);
+    } catch (error) {
+        console.error('Error:', error);
+    }
+};
+
+function searchProducts() {
+    const searchTerm = document.getElementById('searchInput').value;
+    // Implement search
+    loadProducts();
+}
+
+// ============= AUTH FUNCTIONS =============
+async function login(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await response.json();
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            currentUser = data.user;
+            showUserMenu();
+            document.getElementById('loginModal').style.display = 'none';
+            showToast('Login successful!');
+            loadProducts();
+        } else {
+            showToast(data.error || 'Login failed', 'error');
+        }
+    } catch (error) {
+        showToast('Network error', 'error');
+    }
+}
+
+async function register(e) {
+    e.preventDefault();
+    
+    const fullName = document.getElementById('regFullName').value;
+    const username = document.getElementById('regUsername').value;
+    const email = document.getElementById('regEmail').value;
+    const password = document.getElementById('regPassword').value;
+    const confirmPassword = document.getElementById('regConfirmPassword').value;
+    
+    if (password !== confirmPassword) {
+        showToast('Passwords do not match!', 'error');
+        return;
+    }
+    
+    if (password.length < 6) {
+        showToast('Password must be at least 6 characters', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/api/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fullName, username, email, password })
+        });
+        
+        const data = await response.json();
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            currentUser = data.user;
+            showUserMenu();
+            document.getElementById('registerModal').style.display = 'none';
+            showToast('Registration successful!');
+            loadProducts();
+        } else {
+            showToast(data.error || 'Registration failed', 'error');
+        }
+    } catch (error) {
+        showToast('Network error', 'error');
+    }
+}
+
+async function forgotPassword(e) {
+    e.preventDefault();
+    const email = document.getElementById('resetEmail').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/forgot-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        
+        const data = await response.json();
+        showToast(data.message, 'success');
+        document.getElementById('forgotPasswordModal').style.display = 'none';
+    } catch (error) {
+        showToast('Network error', 'error');
     }
 }
 
 // ============= PRODUCT SUBMISSION =============
-
 async function submitProduct(e) {
     e.preventDefault();
     
     if (!currentUser) {
-        showToast('Please login to sell products', 'error');
-        showLoginModal();
+        showToast('Please login first', 'error');
         return;
     }
     
     const formData = new FormData(e.target);
-    const images = document.querySelector('input[name="images"]')?.files;
-    
-    if (!images || images.length === 0) {
-        showToast('Please upload at least one image', 'error');
-        return;
-    }
-    
-    const submitBtn = e.target.querySelector('button[type="submit"]');
-    const originalText = submitBtn.innerHTML;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Listing...';
-    submitBtn.disabled = true;
     
     try {
         const response = await fetch(`${API_URL}/api/products`, {
@@ -703,33 +341,67 @@ async function submitProduct(e) {
         });
         
         if (response.ok) {
-            showToast('Product listed successfully!', 'success');
-            e.target.reset();
-            const imagePreview = document.getElementById('imagePreview');
-            if (imagePreview) imagePreview.innerHTML = '';
+            showToast('Product listed!');
             showView('products');
             loadProducts();
+            e.target.reset();
         } else {
-            const error = await response.json();
-            showToast(error.error || 'Error listing product', 'error');
+            showToast('Error listing product', 'error');
         }
     } catch (error) {
-        console.error('Submit product error:', error);
         showToast('Network error', 'error');
-    } finally {
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
     }
 }
 
-// ============= HELPER FUNCTIONS =============
-
-function searchProducts() {
-    const searchTerm = document.getElementById('searchInput')?.value || '';
-    loadProducts(currentCategory, searchTerm);
-    showView('products');
+// ============= CHAT FUNCTIONS =============
+async function loadChats() {
+    if (!currentUser) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/chats`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const chats = await response.json();
+        
+        const chatsList = document.getElementById('chatsList');
+        chatsList.innerHTML = chats.map(chat => `
+            <div onclick="openChat('${chat.id}')">
+                <strong>${escapeHtml(chat.otherUser?.fullName || 'User')}</strong>
+                <p>${chat.productTitle}</p>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error:', error);
+    }
 }
 
+window.openChat = async function(chatId) {
+    try {
+        const response = await fetch(`${API_URL}/api/chats/${chatId}/messages`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const messages = await response.json();
+        
+        const container = document.getElementById('chatMessages');
+        container.innerHTML = messages.map(msg => `
+            <div class="${msg.senderId === currentUser?.id ? 'sent' : 'received'}">
+                ${escapeHtml(msg.message)}
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error:', error);
+    }
+};
+
+function sendMessage() {
+    const message = document.getElementById('messageInput').value;
+    if (!message || !currentSocket) return;
+    
+    // Send message logic here
+    document.getElementById('messageInput').value = '';
+}
+
+// ============= MY PRODUCTS =============
 async function loadMyProducts() {
     if (!currentUser) return;
     
@@ -739,232 +411,48 @@ async function loadMyProducts() {
         });
         const products = await response.json();
         
-        const container = document.getElementById('myProductsGrid');
-        if (!container) return;
-        
+        const grid = document.getElementById('myProductsGrid');
         if (!products.length) {
-            container.innerHTML = '<p style="text-align: center; padding: 2rem;">You haven\'t listed any products yet.</p>';
+            grid.innerHTML = '<p>No products listed yet</p>';
             return;
         }
         
-        container.innerHTML = products.map(product => `
+        grid.innerHTML = products.map(product => `
             <div class="product-card">
-                <img src="${product.images[0] || 'https://via.placeholder.com/300'}" class="product-image">
-                <div class="product-info">
-                    <div class="product-title">${escapeHtml(product.title)}</div>
-                    <div class="product-price">${formatPrice(product.price, product.currency)}</div>
-                    <button onclick="deleteProduct('${product.id}')" style="background: #EF4444; color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; margin-top: 0.5rem;">
-                        Delete
-                    </button>
-                </div>
+                <img src="${product.images[0] || 'https://via.placeholder.com/300'}">
+                <h3>${escapeHtml(product.title)}</h3>
+                <p>$${product.price}</p>
+                <button onclick="deleteProduct('${product.id}')">Delete</button>
             </div>
         `).join('');
     } catch (error) {
-        console.error('Error loading my products:', error);
+        console.error('Error:', error);
     }
 }
 
 window.deleteProduct = async function(productId) {
-    if (confirm('Are you sure you want to delete this product?')) {
-        try {
-            const response = await fetch(`${API_URL}/api/products/${productId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
-            
-            if (response.ok) {
-                showToast('Product deleted', 'success');
-                loadMyProducts();
-                loadProducts();
-            }
-        } catch (error) {
-            showToast('Error deleting product', 'error');
-        }
-    }
-};
-
-window.showProductDetail = async function(productId) {
-    try {
-        const response = await fetch(`${API_URL}/api/products/${productId}?currency=${currentCurrency}`);
-        const product = await response.json();
-        
-        const modal = document.getElementById('productModal');
-        const detailDiv = document.getElementById('productDetail');
-        
-        if (!modal || !detailDiv) return;
-        
-        detailDiv.innerHTML = `
-            <h2>${escapeHtml(product.title)}</h2>
-            <img src="${product.images[0] || 'https://via.placeholder.com/300'}" style="max-width: 100%; border-radius: 8px; margin: 1rem 0;">
-            <div style="font-size: 1.5rem; font-weight: bold; color: var(--primary);">${formatPrice(product.price, product.displayCurrency)}</div>
-            <p><strong>Category:</strong> ${product.category}</p>
-            <p><strong>Condition:</strong> ${product.condition}</p>
-            <p><strong>Description:</strong> ${escapeHtml(product.description)}</p>
-            <p><strong>Seller:</strong> ${escapeHtml(product.seller?.fullName || 'Unknown')}</p>
-            ${currentUser && currentUser.id !== product.sellerId ? 
-                `<button onclick="startChat('${product.id}')" class="btn-primary" style="margin-top: 1rem; width: 100%; padding: 0.75rem;">
-                    <i class="fas fa-comment"></i> Contact Seller
-                </button>` : ''
-            }
-        `;
-        
-        modal.style.display = 'block';
-    } catch (error) {
-        console.error('Error showing product detail:', error);
-    }
-};
-
-window.startChat = async function(productId) {
-    if (!currentUser) {
-        showLoginModal();
-        return;
-    }
+    if (!confirm('Delete this product?')) return;
     
     try {
-        const response = await fetch(`${API_URL}/api/chats`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            },
-            body: JSON.stringify({ productId, buyerId: currentUser.id })
-        });
-        
-        const chat = await response.json();
-        document.getElementById('productModal').style.display = 'none';
-        showView('messages');
-        loadUserChats();
-        setTimeout(() => openChat(chat.id), 500);
-    } catch (error) {
-        showToast('Error starting chat', 'error');
-    }
-};
-
-window.openChat = async function(chatId) {
-    currentChatId = chatId;
-    
-    try {
-        const response = await fetch(`${API_URL}/api/chats/${chatId}/messages`, {
+        const response = await fetch(`${API_URL}/api/products/${productId}`, {
+            method: 'DELETE',
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
-        const messages = await response.json();
         
-        const messagesContainer = document.getElementById('chatMessages');
-        if (!messagesContainer) return;
-        
-        messagesContainer.innerHTML = messages.map(msg => `
-            <div class="message ${msg.senderId === currentUser?.id ? 'message-sent' : 'message-received'}">
-                <div>${escapeHtml(msg.message)}</div>
-                <div class="message-time">${new Date(msg.timestamp).toLocaleString()}</div>
-            </div>
-        `).join('');
-        
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        
-        const chatInput = document.getElementById('chatInput');
-        if (chatInput) chatInput.style.display = 'flex';
-        
-        if (currentSocket) {
-            currentSocket.emit('join_chat', chatId);
+        if (response.ok) {
+            showToast('Product deleted');
+            loadMyProducts();
+            loadProducts();
         }
     } catch (error) {
-        console.error('Error opening chat:', error);
+        showToast('Error deleting', 'error');
     }
 };
 
-function sendMessage() {
-    const messageInput = document.getElementById('messageInput');
-    const message = messageInput?.value.trim();
-    
-    if (!message || !currentChatId || !currentSocket) return;
-    
-    currentSocket.emit('send_message', {
-        chatId: currentChatId,
-        message: message
-    });
-    
-    messageInput.value = '';
-}
-
-function displayMessage(message) {
-    const messagesContainer = document.getElementById('chatMessages');
-    if (!messagesContainer) return;
-    
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${message.senderId === currentUser?.id ? 'message-sent' : 'message-received'}`;
-    messageDiv.innerHTML = `
-        <div>${escapeHtml(message.message)}</div>
-        <div class="message-time">${new Date(message.timestamp).toLocaleString()}</div>
-    `;
-    messagesContainer.appendChild(messageDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
-// ============= CURRENCY FUNCTIONS =============
-
-async function loadCurrencies() {
-    try {
-        const response = await fetch(`${API_URL}/api/currencies`);
-        const data = await response.json();
-        availableCurrencies = data.currencies || [];
-        
-        const savedCurrency = localStorage.getItem('preferredCurrency');
-        if (savedCurrency) {
-            currentCurrency = savedCurrency;
-        }
-        
-        updateCurrencyDisplay();
-    } catch (error) {
-        console.error('Error loading currencies:', error);
-    }
-}
-
-function updateCurrencyDisplay() {
-    const currentCurrencySpan = document.getElementById('currentCurrencyCode');
-    if (currentCurrencySpan) {
-        currentCurrencySpan.textContent = currentCurrency;
-    }
-}
-
-async function loadStats() {
-    try {
-        const response = await fetch(`${API_URL}/api/stats`);
-        const stats = await response.json();
-        
-        const statProducts = document.getElementById('statProducts');
-        const statUsers = document.getElementById('statUsers');
-        
-        if (statProducts) statProducts.textContent = `${stats.totalProducts || 0}+`;
-        if (statUsers) statUsers.textContent = `${stats.totalUsers || 0}+`;
-    } catch (error) {
-        console.error('Error loading stats:', error);
-    }
-}
-
-async function loadLocations() {
-    // Optional
-}
-
-async function forgotPassword(e) {
-    e.preventDefault();
-    showToast('Password reset feature coming soon', 'info');
-}
-
-async function resetPassword(e) {
-    e.preventDefault();
-    showToast('Password reset feature coming soon', 'info');
-}
-
+// ============= HELPER =============
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
-
-// Make functions globally available
-window.showProductDetail = showProductDetail;
-window.startChat = startChat;
-window.openChat = openChat;
-window.deleteProduct = deleteProduct;
-window.sendMessage = sendMessage;
