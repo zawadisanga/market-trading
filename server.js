@@ -11,6 +11,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -35,8 +36,8 @@ app.use(express.static('public'));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: 'Too many requests from this IP'
 });
 app.use('/api/', limiter);
@@ -44,7 +45,7 @@ app.use('/api/', limiter);
 // Ensure directories exist
 const dataDir = path.join(__dirname, 'data');
 const uploadDir = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // Database file path
@@ -52,7 +53,6 @@ const DB_PATH = path.join(dataDir, 'database.json');
 
 // ============= CURRENCY CONFIGURATION =============
 const currencies = {
-  // Africa
   TZS: { code: 'TZS', symbol: 'TSh', name: 'Tanzania Shilling', country: 'Tanzania', flag: '🇹🇿', rate: 1, decimal: 0, region: 'africa' },
   KES: { code: 'KES', symbol: 'KSh', name: 'Kenya Shilling', country: 'Kenya', flag: '🇰🇪', rate: 0.018, decimal: 0, region: 'africa' },
   UGX: { code: 'UGX', symbol: 'USh', name: 'Uganda Shilling', country: 'Uganda', flag: '🇺🇬', rate: 1.4, decimal: 0, region: 'africa' },
@@ -62,8 +62,6 @@ const currencies = {
   XAF: { code: 'XAF', symbol: 'FCFA', name: 'CFA Franc', country: 'Central Africa', flag: '🌍', rate: 0.23, decimal: 0, region: 'africa' },
   MAD: { code: 'MAD', symbol: 'DH', name: 'Moroccan Dirham', country: 'Morocco', flag: '🇲🇦', rate: 0.0038, decimal: 2, region: 'africa' },
   EGP: { code: 'EGP', symbol: 'E£', name: 'Egyptian Pound', country: 'Egypt', flag: '🇪🇬', rate: 0.012, decimal: 2, region: 'africa' },
-  
-  // Asia
   INR: { code: 'INR', symbol: '₹', name: 'Indian Rupee', country: 'India', flag: '🇮🇳', rate: 0.031, decimal: 2, region: 'asia' },
   CNY: { code: 'CNY', symbol: '¥', name: 'Chinese Yuan', country: 'China', flag: '🇨🇳', rate: 0.0027, decimal: 2, region: 'asia' },
   JPY: { code: 'JPY', symbol: '¥', name: 'Japanese Yen', country: 'Japan', flag: '🇯🇵', rate: 0.053, decimal: 0, region: 'asia' },
@@ -74,8 +72,6 @@ const currencies = {
   VND: { code: 'VND', symbol: '₫', name: 'Vietnamese Dong', country: 'Vietnam', flag: '🇻🇳', rate: 9.2, decimal: 0, region: 'asia' },
   PKR: { code: 'PKR', symbol: '₨', name: 'Pakistani Rupee', country: 'Pakistan', flag: '🇵🇰', rate: 0.11, decimal: 0, region: 'asia' },
   BDT: { code: 'BDT', symbol: '৳', name: 'Bangladeshi Taka', country: 'Bangladesh', flag: '🇧🇩', rate: 0.041, decimal: 0, region: 'asia' },
-  
-  // Europe
   EUR: { code: 'EUR', symbol: '€', name: 'Euro', country: 'Europe', flag: '🇪🇺', rate: 0.00035, decimal: 2, region: 'europe' },
   GBP: { code: 'GBP', symbol: '£', name: 'British Pound', country: 'United Kingdom', flag: '🇬🇧', rate: 0.00030, decimal: 2, region: 'europe' },
   CHF: { code: 'CHF', symbol: 'Fr', name: 'Swiss Franc', country: 'Switzerland', flag: '🇨🇭', rate: 0.00033, decimal: 2, region: 'europe' },
@@ -85,25 +81,17 @@ const currencies = {
   PLN: { code: 'PLN', symbol: 'zł', name: 'Polish Zloty', country: 'Poland', flag: '🇵🇱', rate: 0.0016, decimal: 2, region: 'europe' },
   RUB: { code: 'RUB', symbol: '₽', name: 'Russian Ruble', country: 'Russia', flag: '🇷🇺', rate: 0.029, decimal: 2, region: 'europe' },
   TRY: { code: 'TRY', symbol: '₺', name: 'Turkish Lira', country: 'Turkey', flag: '🇹🇷', rate: 0.0072, decimal: 2, region: 'europe' },
-  
-  // North America
   USD: { code: 'USD', symbol: '$', name: 'US Dollar', country: 'United States', flag: '🇺🇸', rate: 0.00038, decimal: 2, region: 'north_america' },
   CAD: { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar', country: 'Canada', flag: '🇨🇦', rate: 0.00051, decimal: 2, region: 'north_america' },
   MXN: { code: 'MXN', symbol: '$', name: 'Mexican Peso', country: 'Mexico', flag: '🇲🇽', rate: 0.0065, decimal: 2, region: 'north_america' },
-  
-  // South America
   BRL: { code: 'BRL', symbol: 'R$', name: 'Brazilian Real', country: 'Brazil', flag: '🇧🇷', rate: 0.0019, decimal: 2, region: 'south_america' },
   ARS: { code: 'ARS', symbol: '$', name: 'Argentine Peso', country: 'Argentina', flag: '🇦🇷', rate: 0.089, decimal: 2, region: 'south_america' },
   CLP: { code: 'CLP', symbol: '$', name: 'Chilean Peso', country: 'Chile', flag: '🇨🇱', rate: 0.31, decimal: 0, region: 'south_america' },
   COP: { code: 'COP', symbol: '$', name: 'Colombian Peso', country: 'Colombia', flag: '🇨🇴', rate: 1.5, decimal: 0, region: 'south_america' },
   PEN: { code: 'PEN', symbol: 'S/', name: 'Peruvian Sol', country: 'Peru', flag: '🇵🇪', rate: 0.0014, decimal: 2, region: 'south_america' },
-  
-  // Oceania
   AUD: { code: 'AUD', symbol: 'A$', name: 'Australian Dollar', country: 'Australia', flag: '🇦🇺', rate: 0.00057, decimal: 2, region: 'oceania' },
   NZD: { code: 'NZD', symbol: 'NZ$', name: 'New Zealand Dollar', country: 'New Zealand', flag: '🇳🇿', rate: 0.00061, decimal: 2, region: 'oceania' },
   FJD: { code: 'FJD', symbol: 'FJ$', name: 'Fijian Dollar', country: 'Fiji', flag: '🇫🇯', rate: 0.00084, decimal: 2, region: 'oceania' },
-  
-  // Middle East
   AED: { code: 'AED', symbol: 'د.إ', name: 'UAE Dirham', country: 'UAE', flag: '🇦🇪', rate: 0.0014, decimal: 2, region: 'middle_east' },
   SAR: { code: 'SAR', symbol: '﷼', name: 'Saudi Riyal', country: 'Saudi Arabia', flag: '🇸🇦', rate: 0.00143, decimal: 2, region: 'middle_east' },
   QAR: { code: 'QAR', symbol: '﷼', name: 'Qatari Riyal', country: 'Qatar', flag: '🇶🇦', rate: 0.00138, decimal: 2, region: 'middle_east' },
@@ -123,6 +111,7 @@ function initDB() {
       chats: [],
       reviews: [],
       orders: [],
+      passwordResets: [],
       analytics: { pageViews: 0, totalSales: 0, totalUsers: 0 },
       settings: {
         siteName: 'MarketHub Worldwide',
@@ -312,6 +301,78 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// ============= PASSWORD RESET ROUTES =============
+app.post('/api/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const db = readDB();
+    const user = db.users.find(u => u.email === email);
+    
+    if (!user) {
+      return res.json({ 
+        success: true, 
+        message: 'If your email is registered, you will receive a password reset link' 
+      });
+    }
+    
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpiry = new Date();
+    resetExpiry.setHours(resetExpiry.getHours() + 1);
+    
+    db.passwordResets = db.passwordResets || [];
+    db.passwordResets.push({
+      email: user.email,
+      token: resetToken,
+      expiresAt: resetExpiry.toISOString(),
+      createdAt: new Date().toISOString()
+    });
+    
+    db.passwordResets = db.passwordResets.filter(r => new Date(r.expiresAt) > new Date());
+    writeDB(db);
+    
+    res.json({
+      success: true,
+      message: 'Password reset link sent to your email',
+      resetToken: resetToken,
+      resetUrl: `${req.protocol}://${req.get('host')}/reset-password.html?token=${resetToken}`
+    });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    const db = readDB();
+    
+    const resetRequest = db.passwordResets?.find(r => 
+      r.token === token && new Date(r.expiresAt) > new Date()
+    );
+    
+    if (!resetRequest) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+    
+    const userIndex = db.users.findIndex(u => u.email === resetRequest.email);
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    db.users[userIndex].password = hashedPassword;
+    
+    db.passwordResets = db.passwordResets.filter(r => r.token !== token);
+    writeDB(db);
+    
+    res.json({ success: true, message: 'Password reset successful' });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============= PRODUCT ROUTES =============
 app.post('/api/products', authenticateToken, upload.array('images', 10), (req, res) => {
   try {
@@ -402,7 +463,6 @@ app.get('/api/products/:id', (req, res) => {
   const product = db.products.find(p => p.id === req.params.id);
   if (!product) return res.status(404).json({ error: 'Product not found' });
   
-  // Increment views
   product.views++;
   writeDB(db);
   
@@ -510,7 +570,6 @@ app.post('/api/reviews', authenticateToken, (req, res) => {
   
   db.reviews.push(review);
   
-  // Update seller rating
   const product = db.products.find(p => p.id === productId);
   if (product) {
     const seller = db.users.find(u => u.id === product.sellerId);
@@ -632,116 +691,4 @@ server.listen(PORT, () => {
   console.log(`🚀 MarketHub Worldwide Server running on port ${PORT}`);
   console.log(`📍 Visit http://localhost:${PORT}`);
   console.log(`💱 ${Object.keys(currencies).length} currencies supported worldwide`);
-});
-
-
-
-// Add these to your existing server.js
-const crypto = require('crypto');
-
-// Add to your existing code - Password reset tokens
-// Add this to your database initialization
-function initDB() {
-  if (!fs.existsSync(DB_PATH)) {
-    const initialData = {
-      users: [],
-      products: [],
-      messages: [],
-      chats: [],
-      reviews: [],
-      orders: [],
-      passwordResets: [], // Add this for password reset tokens
-      analytics: { pageViews: 0, totalSales: 0, totalUsers: 0 },
-      settings: {
-        siteName: 'MarketHub Worldwide',
-        siteEmail: 'support@markethub.com',
-        maintenanceMode: false,
-        defaultCurrency: 'USD'
-      }
-    };
-    fs.writeFileSync(DB_PATH, JSON.stringify(initialData, null, 2));
-  }
-}
-
-// Forgot Password - Request reset
-app.post('/api/forgot-password', async (req, res) => {
-  try {
-    const { email } = req.body;
-    const db = readDB();
-    const user = db.users.find(u => u.email === email);
-    
-    if (!user) {
-      // For security, don't reveal if email exists or not
-      return res.json({ 
-        success: true, 
-        message: 'If your email is registered, you will receive a password reset link' 
-      });
-    }
-    
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetExpiry = new Date();
-    resetExpiry.setHours(resetExpiry.getHours() + 1); // Token expires in 1 hour
-    
-    // Save reset token
-    db.passwordResets = db.passwordResets || [];
-    db.passwordResets.push({
-      email: user.email,
-      token: resetToken,
-      expiresAt: resetExpiry.toISOString(),
-      createdAt: new Date().toISOString()
-    });
-    
-    // Remove old tokens
-    db.passwordResets = db.passwordResets.filter(r => new Date(r.expiresAt) > new Date());
-    writeDB(db);
-    
-    // In production, send email here
-    // For demo, return token in response (in production, send via email)
-    res.json({
-      success: true,
-      message: 'Password reset link sent to your email',
-      resetToken: resetToken, // Remove this in production, only for demo
-      resetUrl: `${req.protocol}://${req.get('host')}/reset-password.html?token=${resetToken}`
-    });
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Reset Password
-app.post('/api/reset-password', async (req, res) => {
-  try {
-    const { token, newPassword } = req.body;
-    const db = readDB();
-    
-    // Find valid reset token
-    const resetRequest = db.passwordResets?.find(r => 
-      r.token === token && new Date(r.expiresAt) > new Date()
-    );
-    
-    if (!resetRequest) {
-      return res.status(400).json({ error: 'Invalid or expired reset token' });
-    }
-    
-    // Find user
-    const userIndex = db.users.findIndex(u => u.email === resetRequest.email);
-    if (userIndex === -1) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    db.users[userIndex].password = hashedPassword;
-    
-    // Remove used reset tokens
-    db.passwordResets = db.passwordResets.filter(r => r.token !== token);
-    writeDB(db);
-    
-    res.json({ success: true, message: 'Password reset successful' });
-    
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
 });
