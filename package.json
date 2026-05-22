@@ -1,12 +1,11 @@
 {
   "name": "marketplace-worldwide",
   "version": "2.0.0",
-  "description": "Global Online Marketplace with Multi-Currency Support",
+  "description": "Global Online Marketplace",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "heroku-postbuild": "echo 'Build completed'"
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -19,8 +18,7 @@
     "cors": "^2.8.5",
     "helmet": "^7.0.0",
     "compression": "^1.7.4",
-    "express-rate-limit": "^6.7.0",
-    "node-fetch": "^2.6.7"
+    "express-rate-limit": "^6.7.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.20"
@@ -28,18 +26,5 @@
   "engines": {
     "node": "18.x",
     "npm": "9.x"
-  },
-  "keywords": [
-    "marketplace",
-    "ecommerce",
-    "multi-currency",
-    "chat",
-    "heroku"
-  ],
-  "author": "MarketHub Africa",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yourusername/marketplace-worldwide"
   }
 }
