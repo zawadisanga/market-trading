@@ -1236,3 +1236,33 @@ body {
         max-width: 85%;
     }
 }
+
+
+
+/* Add to your style.css */
+.password-strength {
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+}
+
+.error-message {
+    color: var(--danger);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+    display: block;
+}
+
+.success-message {
+    color: var(--secondary);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+    display: block;
+}
+
+input:invalid {
+    border-color: var(--danger);
+}
+
+input:valid {
+    border-color: var(--secondary);
+}
