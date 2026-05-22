@@ -459,6 +459,7 @@
 </html>
 
 <!-- Update your register modal to include confirm password -->
+<!-- Register Modal - Complete working version -->
 <div id="registerModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
@@ -466,7 +467,7 @@
             <span class="close">&times;</span>
         </div>
         <div class="modal-body">
-            <form id="registerForm">
+            <form id="registerForm" onsubmit="return false;">
                 <div class="form-row">
                     <div class="form-group">
                         <label><i class="fas fa-user"></i> Full Name *</label>
@@ -477,10 +478,12 @@
                         <input type="text" id="regUsername" required placeholder="johndoe">
                     </div>
                 </div>
+                
                 <div class="form-group">
                     <label><i class="fas fa-envelope"></i> Email Address *</label>
                     <input type="email" id="regEmail" required placeholder="john@example.com">
                 </div>
+                
                 <div class="form-row">
                     <div class="form-group">
                         <label><i class="fas fa-map-marker-alt"></i> Country</label>
@@ -492,7 +495,6 @@
                             <option value="South Africa">🇿🇦 South Africa</option>
                             <option value="United States">🇺🇸 United States</option>
                             <option value="United Kingdom">🇬🇧 United Kingdom</option>
-                            <option value="India">🇮🇳 India</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -500,16 +502,28 @@
                         <input type="tel" id="regPhone" placeholder="+255 123 456 789">
                     </div>
                 </div>
+                
                 <div class="form-group">
                     <label><i class="fas fa-lock"></i> Password *</label>
                     <input type="password" id="regPassword" required placeholder="At least 6 characters">
-                    <small>Password must be at least 6 characters long</small>
+                    <small id="passwordHint" style="color: #6B7280; font-size: 0.75rem;">Password must be at least 6 characters</small>
                 </div>
+                
+                <!-- THIS IS THE IMPORTANT FIELD - Confirm Password -->
                 <div class="form-group">
                     <label><i class="fas fa-check-circle"></i> Confirm Password *</label>
                     <input type="password" id="regConfirmPassword" required placeholder="Confirm your password">
+                    <div id="passwordMatchError" style="color: #EF4444; font-size: 0.75rem; margin-top: 0.25rem; display: none;">
+                        <i class="fas fa-times-circle"></i> Passwords do not match!
+                    </div>
+                    <div id="passwordMatchSuccess" style="color: #10B981; font-size: 0.75rem; margin-top: 0.25rem; display: none;">
+                        <i class="fas fa-check-circle"></i> Passwords match!
+                    </div>
                 </div>
-                <button type="submit" class="btn-submit-full">Create Account</button>
+                
+                <button type="submit" class="btn-submit-full" id="registerSubmitBtn">
+                    <i class="fas fa-user-plus"></i> Create Account
+                </button>
             </form>
             <div class="modal-footer">
                 <p>Already have an account? <a href="#" id="switchToLogin">Login</a></p>
